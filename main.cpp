@@ -3,15 +3,15 @@
 #include <iostream>
 
 // flags:
-// bit1 - bit2      bit3
-// enc           msg_type
+// bit7  bit6    bit5      bit4       bit3       bit2        bit1        bit0
+// enc   ---  msg_type  start_trans  end_trans   serialize     ACK       URGENT
 //
 //
 // msg_type: 0 text, 1 file
 //  Define Packet Structure
 struct CustomPacket {
   uint16_t packet_id; // 2 bytes
-  uint8_t flags;
+  uint8_t flags = 0;
   uint16_t length;   // 2 bytes
   char payload[256]; // Fixed-size payload (can be dynamic)
   uint16_t checksum; // 2 bytes
@@ -55,6 +55,9 @@ struct CustomPacket {
       std::cout << "Invalid msgType value!! Only 0 and 1 accepted.\n";
     }
   }
+
+  //
+  void setClose_transmision() {}
 };
 
 // Example usage
@@ -64,7 +67,7 @@ int main() {
   packet.packet_id = 1;
   packet.flags = 0; // Text message
   std::cout << (int)packet.flags << std::endl;
-  packet.setMsgType(1);
+  packet.setMsgType(1); // File
   std::cout << (int)packet.flags << std::endl;
 
   strcpy(packet.payload, "Hello, custom protocol!");
