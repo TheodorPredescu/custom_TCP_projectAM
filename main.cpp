@@ -11,12 +11,7 @@
 // msg_type: 0 text, 1 file
 //  Define Packet Structure
 
-// Example usage
-int main() {
-  // Create a test packet
-  CustomPacket packet;
-  packet.packet_id = 1;
-  // packet.flags = 0; // Text message
+void print_and_verify_bits0_5(CustomPacket packet) {
 
   std::cout << packet.getMsgType() << std::endl;
   packet.setMsgType(1); // File
@@ -37,6 +32,14 @@ int main() {
   std::cout << packet.get_urgent_flag() << std::endl;
   packet.set_urgent_flag();
   std::cout << packet.get_urgent_flag() << std::endl;
+}
+// Example usage
+int main() {
+  // Create a test packet
+  CustomPacket packet;
+  packet.packet_id = 1;
+  // packet.flags = 0; // Text message
+  print_and_verify_bits0_5(packet);
 
   strcpy(packet.payload, "Hello, custom protocol!");
   packet.length = strlen(packet.payload);
