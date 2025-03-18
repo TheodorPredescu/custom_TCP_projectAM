@@ -1,10 +1,12 @@
 #include "CustomPacket.h"
 #include <arpa/inet.h>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <thread>
 #include <unistd.h>
 
@@ -79,4 +81,34 @@ void Peer::startPeer(int port, const char *remote_ip) {
   packet.checksum = packet.calculateChecksum(packet);
 
   sendPacket(packet);
+}
+
+void Peer::receivePacket() {
+  u_int8_t buffer[sizeof(CustomPacket)];
+  int valread = read(sock, buffer, sizeof(CustomPacket));
+  if (valread > 0) {
+    CustomPacket packet = CustomPacket::deserialize(buffer);
+    std::cout << "Received Packet ID: " << packet.packet_id << "\n";
+    std::cout << "Payload: " << packet.payload << "\n";
+  } else {
+    std::cout << "Error reading packet\n";
+  }
+}
+
+void Peer::listenForPackets() {
+  if (peer_addr.sin_addr.s_addr == INADDR_ANY) {
+    int new_socket;
+    socklen_t addrlen = sizeof(peer_addr);
+    new_socket = accept(sock, (struct sockaddr *)&peer_addr, &addrlen);
+    if (new_socket < 0) {
+      perror("Accept failed");
+      exit(EXIT_FAILURE);
+    }
+
+    sock = new_socket;
+  }
+
+  while (true) {
+    receivePacket();
+  }
 }
