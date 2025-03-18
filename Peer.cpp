@@ -39,6 +39,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
   std::cout << "Packet sended to: " << sock;
 }
 
+// TODO check everithing
 void Peer::startPeer(int port, const char *remote_ip) {
 
   if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -83,6 +84,7 @@ void Peer::startPeer(int port, const char *remote_ip) {
   sendPacket(packet);
 }
 
+// TODO check everithing
 void Peer::receivePacket() {
   u_int8_t buffer[sizeof(CustomPacket)];
   int valread = read(sock, buffer, sizeof(CustomPacket));
@@ -95,6 +97,7 @@ void Peer::receivePacket() {
   }
 }
 
+// TODO check everithing
 void Peer::listenForPackets() {
   if (peer_addr.sin_addr.s_addr == INADDR_ANY) {
     int new_socket;
