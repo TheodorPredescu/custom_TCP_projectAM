@@ -85,14 +85,18 @@ void Peer::startPeer(int port, const char *remote_ip) {
   sendPacket(packet);
 }
 
-// TODO check everithing
+// Receiving a SINGLE packet ad deserializing it, printing packet ID and the payload; NOT checking flags or anything else; 
+// NOT USABLE LATER ON !!!
 void Peer::receivePacket() {
   u_int8_t buffer[sizeof(CustomPacket)];
   int valread = read(sock, buffer, sizeof(CustomPacket));
+
   if (valread > 0) {
+
     CustomPacket packet = CustomPacket::deserialize(buffer);
     std::cout << "Received Packet ID: " << packet.packet_id << "\n";
     std::cout << "Payload: " << packet.payload << "\n";
+
   } else {
     std::cout << "Error reading packet\n";
   }
