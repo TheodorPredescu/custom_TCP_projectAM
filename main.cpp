@@ -4,8 +4,8 @@
 #include <iostream>
 
 // flags:
-// bit7  bit6    bit5      bit4       bit3       bit2        bit1 bit0 enc
-// ---  msg_type  start_trans  end_trans   serialize     ACK       URGENT
+// bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
+// enc ---  msg_type  start_trans  end_trans   series     ACK       URGENT
 //
 //
 // msg_type: 0 text, 1 file

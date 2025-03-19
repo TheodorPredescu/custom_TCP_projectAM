@@ -85,7 +85,7 @@ void Peer::startPeer(int port, const char *remote_ip) {
   sendPacket(packet);
 }
 
-// Receiving a SINGLE packet ad deserializing it, printing packet ID and the payload; NOT checking flags or anything else; 
+// Receiving a SINGLE packet and deserializing it, printing packet ID and the payload; NOT checking flags or anything else; 
 // NOT USABLE LATER ON !!!
 void Peer::receivePacket() {
   u_int8_t buffer[sizeof(CustomPacket)];

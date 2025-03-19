@@ -22,8 +22,7 @@ CustomPacket CustomPacket::deserialize(const uint8_t *buffer) {
 }
 
 // SETS CONTEXT TYPE: MESSAGE OR FILE
-// it returns 32 when the the flag is 1 (meaning the package is from a file) and
-// 0 if the flag is 0 (from a text)
+// 0 for msg and 1 for file
 bool CustomPacket::getMsgType() const { return (bool)((flags >> 5) & 0x01); }
 
 void CustomPacket::setMsgType(int msgType) {
@@ -63,3 +62,25 @@ bool CustomPacket::get_ack_flag() const { return (flags & 0x02) != 0; }
 // urgent flag -> check and set; the 0th bit
 void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
+
+// Fragment a message into multiple packets if necessary
+std::vector<CustomPacket> CustomPacket::fragmentMessage(const std::string &message) {
+    std::vector<CustomPacket> packets;
+    size_t maxPayloadSize = 256;
+    size_t totalLength = message.size();
+    size_t offset = 0;
+
+    while (offset < totalLength) {
+        CustomPacket packet;
+        size_t length = std::min(maxPayloadSize, totalLength - offset);
+        memcpy(packet.payload, message.data() + offset, length);
+        packet.set_serialize_flag(); // Mark as fragmented
+        offset += length;
+
+        if (offset >= totalLength) {
+            packet.set_end_transmition_flag(); // Last packet
+        }
+        packets.push_back(packet);
+    }
+    return packets;
+}
