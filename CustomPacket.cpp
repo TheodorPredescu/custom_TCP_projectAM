@@ -64,14 +64,20 @@ void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 
 // Fragment a message into multiple packets if necessary
-std::vector<CustomPacket> CustomPacket::fragmentMessage(const std::string &message) {
+std::vector<CustomPacket> CustomPacket::fragmentMessage(const std::string &message, const uint16_t id_last_package) {
     std::vector<CustomPacket> packets;
     size_t maxPayloadSize = 256;
     size_t totalLength = message.size();
     size_t offset = 0;
+    bool first_package = true;
 
     while (offset < totalLength) {
         CustomPacket packet;
+
+        if (first_package) {
+          first_package = false;
+          
+        }
         size_t length = std::min(maxPayloadSize, totalLength - offset);
         memcpy(packet.payload, message.data() + offset, length);
         packet.set_serialize_flag(); // Mark as fragmented
