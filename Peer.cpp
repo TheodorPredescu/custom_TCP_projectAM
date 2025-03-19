@@ -13,6 +13,9 @@
 class Peer {
 public:
   void startPeer(int port, const char *remote_ip = nullptr);
+  //TO DO
+  void sendMessage(const std::string msg);
+  void sendFile();
 
 private:
   int sock;
@@ -23,11 +26,9 @@ private:
   void connectToPeer(const char *remote_ip);
 
   // for later
-  void sendMessage(const std::string msg);
   void composePacketMessage();
 
   // for much later
-  void sendFile();
   void composePacketFile();
 };
 
