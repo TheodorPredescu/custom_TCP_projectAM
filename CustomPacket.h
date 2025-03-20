@@ -8,14 +8,14 @@
 #include <vector>
 
 // flags:
-// bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
+// bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0
 // enc ---  msg_type  start_trans  end_trans   series     ACK       URGENT
 
 // msg_type: 0 text, 1 file
 // to fully ask for end of transmition we send URGENT bit and end_trans bit
-// to end a serialised message (string or file) we need to have the end_trans bit on and the series bit on
-// END TRANS IS NOT ONLY FOR THE FULLY END OF TRANSMITION !!!!
-// TO REMIND MYSELF
+// to end a serialised message (string or file) we need to have the end_trans
+// bit on and the series bit on END TRANS IS NOT ONLY FOR THE FULLY END OF
+// TRANSMITION !!!! TO REMIND MYSELF
 
 struct CustomPacket {
   uint16_t packet_id;
@@ -24,7 +24,8 @@ struct CustomPacket {
   char payload[256];
   uint16_t checksum;
 
-  std::vector<CustomPacket> fragmentMessage(const std::string &message);
+  std::vector<CustomPacket> fragmentMessage(const std::string &message,
+                                            uint16_t &id_last_packet);
   uint16_t calculateChecksum(const CustomPacket &packet);
   void serialize(uint8_t *buffer) const;
   static CustomPacket deserialize(const uint8_t *buffer);

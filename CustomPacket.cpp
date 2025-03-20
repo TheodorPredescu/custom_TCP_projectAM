@@ -1,6 +1,7 @@
 
 // CustomPacket.cpp
 #include "CustomPacket.h"
+#include <cstdint>
 
 uint16_t CustomPacket::calculateChecksum(const CustomPacket &packet) {
   uint32_t sum = 0;
@@ -63,30 +64,43 @@ bool CustomPacket::get_ack_flag() const { return (flags & 0x02) != 0; }
 void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 
-// Fragment a message into multiple packets if necessary
-std::vector<CustomPacket> CustomPacket::fragmentMessage(const std::string &message, const uint16_t id_last_package) {
-    std::vector<CustomPacket> packets;
-    size_t maxPayloadSize = 256;
-    size_t totalLength = message.size();
-    size_t offset = 0;
-    bool first_package = true;
+// Fragment a message into multiple packets if necessary and sets packet_id
+// based on value given
+std::vector<CustomPacket>
+CustomPacket::fragmentMessage(const std::string &message,
+                              uint16_t &id_last_package) {
 
-    while (offset < totalLength) {
-        CustomPacket packet;
+  std::vector<CustomPacket> packets;
+  size_t maxPayloadSize = 256;
+  size_t totalLength = message.size();
+  size_t offset = 0;
+  bool first_package = true;
 
-        if (first_package) {
-          first_package = false;
-          
-        }
-        size_t length = std::min(maxPayloadSize, totalLength - offset);
-        memcpy(packet.payload, message.data() + offset, length);
-        packet.set_serialize_flag(); // Mark as fragmented
-        offset += length;
+  while (offset < totalLength) {
 
-        if (offset >= totalLength) {
-            packet.set_end_transmition_flag(); // Last packet
-        }
-        packets.push_back(packet);
+    CustomPacket packet;
+    packet.packet_id = id_last_package++;
+
+    // checking if the value of id_last_package excedes the max value
+    if (id_last_package >= UINT16_MAX) {
+      std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+      id_last_package = 1;
     }
-    return packets;
+
+    // copying in memory in the current packet.payload the message string
+    size_t length = std::min(maxPayloadSize, totalLength - offset);
+    memcpy(packet.payload, message.data() + offset, length);
+
+    offset += length;
+
+    if (totalLength > maxPayloadSize) {
+      packet.set_serialize_flag();
+    }
+
+    if (offset >= totalLength) {
+      packet.set_end_transmition_flag(); // Last packet
+    }
+    packets.push_back(packet);
+  }
+  return packets;
 }
