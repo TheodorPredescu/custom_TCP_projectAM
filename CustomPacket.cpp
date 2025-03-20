@@ -36,7 +36,7 @@ void CustomPacket::setMsgType(int msgType) {
   } else if (msgType == 1) {
     flags |= 0x20;
   } else {
-    std::cout << "Invalid msgType value!! Only 0 and 1 accepted.\n";
+    std::cerr << "Invalid msgType value!! Only 0 and 1 accepted.\n";
   }
 }
 
@@ -64,8 +64,9 @@ bool CustomPacket::get_ack_flag() const { return (flags & 0x02) != 0; }
 void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 
-// Fragment a message into multiple packets if necessary and sets packet_id
-// based on value given
+// Fragment a message into multiple packets
+// It does not set the packet id or, logic, the checksum value; this values need
+// to be set in Peer class
 std::vector<CustomPacket>
 CustomPacket::fragmentMessage(const std::string &message,
                               uint16_t &id_last_package) {
@@ -79,17 +80,20 @@ CustomPacket::fragmentMessage(const std::string &message,
   while (offset < totalLength) {
 
     CustomPacket packet;
-    packet.packet_id = id_last_package++;
-
-    // checking if the value of id_last_package excedes the max value
-    if (id_last_package >= UINT16_MAX) {
-      std::cerr << "Warning: Packet ID overflow. Resetting...\n";
-      id_last_package = 1;
-    }
+    // packet.packet_id = id_last_package++;
+    //
+    // // checking if the value of id_last_package excedes the max value
+    // if (id_last_package >= UINT16_MAX) {
+    //   std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+    //   id_last_package = 1;
+    // }
 
     // copying in memory in the current packet.payload the message string
     size_t length = std::min(maxPayloadSize, totalLength - offset);
     memcpy(packet.payload, message.data() + offset, length);
+
+    // setting length
+    packet.length = length;
 
     offset += length;
 

@@ -13,28 +13,44 @@
 class Peer {
 public:
   void startPeer(int port, const char *remote_ip = nullptr);
-  //TO DO
+  // TO DO
   void sendMessage(const std::string msg);
   void sendFile();
 
 private:
   int sock;
   sockaddr_in peer_addr;
-  void sendPacket(const CustomPacket &packet);
+  u_int16_t id_packet = 0;
+  void sendPacket(CustomPacket &packet);
   void receivePacket();
   void listenForPackets();
   void connectToPeer(const char *remote_ip);
 
   // for later
   void composePacketMessage();
+  void sendPacketMessage();
 
   // for much later
   void composePacketFile();
+  void sendPacketFile();
 };
 
 // gets a package and sends it to the socket sock
-void Peer::sendPacket(const CustomPacket &packet) {
+// working to make it decent with bigger package
+void Peer::sendPacket(CustomPacket &packet) {
+
   uint8_t buffer[sizeof(CustomPacket)];
+
+  // The packet_id and checksum will be added here; cannot fit verry well in the
+  // CustomPacket struct
+  if (id_packet >= UINT16_MAX - 1) {
+    std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+    id_packet = 0;
+  }
+
+  packet.packet_id = id_packet;
+  packet.checksum = packet.calculateChecksum(packet);
+
   packet.serialize(buffer);
   send(sock, buffer, sizeof(buffer), 0);
   std::cout << "Packet sended to: " << sock;
@@ -44,7 +60,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
 void Peer::startPeer(int port, const char *remote_ip) {
 
   if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    std::cout << "Error creating socket!\n";
+    std::cerr << "Error creating socket!\n";
     return;
   }
 
@@ -85,8 +101,8 @@ void Peer::startPeer(int port, const char *remote_ip) {
   sendPacket(packet);
 }
 
-// Receiving a SINGLE packet and deserializing it, printing packet ID and the payload; NOT checking flags or anything else; 
-// NOT USABLE LATER ON !!!
+// Receiving a SINGLE packet and deserializing it, printing packet ID and the
+// payload; NOT checking flags or anything else; NOT USABLE LATER ON !!!
 void Peer::receivePacket() {
   u_int8_t buffer[sizeof(CustomPacket)];
   int valread = read(sock, buffer, sizeof(CustomPacket));
