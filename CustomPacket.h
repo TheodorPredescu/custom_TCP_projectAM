@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <map>
+#include <sys/types.h>
 #include <vector>
 
 // flags:
@@ -13,9 +15,9 @@
 
 // msg_type: 0 text, 1 file
 // to fully ask for end of transmition we send URGENT bit and end_trans bit
-// to end a serialised message (string or file) we need to have the end_trans
-// bit on and the series bit on END TRANS IS NOT ONLY FOR THE FULLY END OF
-// TRANSMITION !!!! TO REMIND MYSELF
+// to end a serialised message (string or file) we need to have the
+// end_trans bit on and the series bit on END TRANS IS NOT ONLY FOR THE
+// FULLY END OF TRANSMITION !!!! TO REMIND MYSELF
 
 struct CustomPacket {
   uint16_t packet_id;
@@ -24,8 +26,11 @@ struct CustomPacket {
   char payload[256];
   uint16_t checksum;
 
-  std::vector<CustomPacket> fragmentMessage(const std::string &message,
-                                            uint16_t &id_last_packet);
+  static std::map<u_int16_t, CustomPacket>
+  fragmentMessage(const std::string &message, u_int16_t &packet_id);
+  static std::string
+  composedMessage(const std::map<uint16_t, CustomPacket> &map_packets);
+
   uint16_t calculateChecksum(const CustomPacket &packet);
   void serialize(uint8_t *buffer) const;
   static CustomPacket deserialize(const uint8_t *buffer);

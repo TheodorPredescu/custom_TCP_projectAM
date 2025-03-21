@@ -10,6 +10,8 @@
 #include <thread>
 #include <unistd.h>
 
+// I need to add the logic to send a string, receive a string and print it
+
 class Peer {
 public:
   void startPeer(int port, const char *remote_ip = nullptr);
@@ -41,15 +43,16 @@ void Peer::sendPacket(CustomPacket &packet) {
 
   uint8_t buffer[sizeof(CustomPacket)];
 
-  // The packet_id and checksum will be added here; cannot fit verry well in the
-  // CustomPacket struct
-  if (id_packet >= UINT16_MAX - 1) {
-    std::cerr << "Warning: Packet ID overflow. Resetting...\n";
-    id_packet = 0;
-  }
-
-  packet.packet_id = id_packet;
-  packet.checksum = packet.calculateChecksum(packet);
+  // // The packet_id and checksum will be added here; cannot fit verry well in
+  // the
+  // // CustomPacket struct
+  // if (id_packet >= UINT16_MAX - 1) {
+  //   std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+  //   id_packet = 0;
+  // }
+  //
+  // packet.packet_id = id_packet;
+  // packet.checksum = packet.calculateChecksum(packet);
 
   packet.serialize(buffer);
   send(sock, buffer, sizeof(buffer), 0);
@@ -101,8 +104,14 @@ void Peer::startPeer(int port, const char *remote_ip) {
   sendPacket(packet);
 }
 
-// Receiving a SINGLE packet and deserializing it, printing packet ID and the
-// payload; NOT checking flags or anything else; NOT USABLE LATER ON !!!
+// We need to receive the packet, check if it has the serialize flag on and add
+// it to a vector;
+// If the waiting accedes a certain duration, we send it to composedMessage();
+// I need to think of a way to patch the wrong transimions (meaning late
+// messages) -> most likely i keep the vector here till a "finished with
+// success" message !! OOOOR I  SEND FIRST A PACKET THAT TELLS ME THE NUMBER OF
+// PACKAGES THAT WILL BE SEND AND I JUST CHECK IF THAT NUMBER OF PACKAGES ARE
+// MET
 void Peer::receivePacket() {
   u_int8_t buffer[sizeof(CustomPacket)];
   int valread = read(sock, buffer, sizeof(CustomPacket));

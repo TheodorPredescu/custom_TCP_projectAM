@@ -1,7 +1,13 @@
 
 // CustomPacket.cpp
 #include "CustomPacket.h"
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <string>
+#include <sys/types.h>
 
 uint16_t CustomPacket::calculateChecksum(const CustomPacket &packet) {
   uint32_t sum = 0;
@@ -65,17 +71,45 @@ void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 
 // Fragment a message into multiple packets
-// It does not set the packet id or, logic, the checksum value; this values need
-// to be set in Peer class
-std::vector<CustomPacket>
+// It does add packed id because it was needed (switched to map)
+// It does add checksumm so that all is done here
+std::map<u_int16_t, CustomPacket>
 CustomPacket::fragmentMessage(const std::string &message,
-                              uint16_t &id_last_package) {
+                              u_int16_t &packet_id) {
 
-  std::vector<CustomPacket> packets;
+  std::map<u_int16_t, CustomPacket> packets;
   size_t maxPayloadSize = 256;
   size_t totalLength = message.size();
   size_t offset = 0;
   bool first_package = true;
+
+  // Calculating the number of packets that will be needed to be send for this
+  // message
+  int number_of_packages_to_be_sended =
+      (totalLength + maxPayloadSize - 1) / maxPayloadSize;
+
+  // Creating the first packet that contains the size of the big message; It
+  // will have 2 flags on : serialize and start transmition flag
+  if (number_of_packages_to_be_sended > 1) {
+    CustomPacket start_packet;
+
+    start_packet.set_start_transmition_flag();
+    start_packet.set_serialize_flag();
+
+    std::string length_ser = std::to_string(number_of_packages_to_be_sended);
+    memcpy(start_packet.payload, length_ser.data(), length_ser.length());
+
+    // increment the packed_id so that it does not repeat
+    packet_id += 1;
+    if (packet_id >= UINT16_MAX) {
+      std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+      packet_id = 0;
+    }
+    start_packet.packet_id = packet_id;
+    start_packet.checksum = start_packet.calculateChecksum(start_packet);
+
+    packets[packet_id] = start_packet;
+  }
 
   while (offset < totalLength) {
 
@@ -92,19 +126,78 @@ CustomPacket::fragmentMessage(const std::string &message,
     size_t length = std::min(maxPayloadSize, totalLength - offset);
     memcpy(packet.payload, message.data() + offset, length);
 
-    // setting length
+    // Setting length
     packet.length = length;
 
     offset += length;
 
-    if (totalLength > maxPayloadSize) {
+    if (number_of_packages_to_be_sended > 1) {
       packet.set_serialize_flag();
     }
 
     if (offset >= totalLength) {
       packet.set_end_transmition_flag(); // Last packet
     }
-    packets.push_back(packet);
+
+    packet_id += 1;
+    if (packet_id >= UINT16_MAX) {
+      std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+      packet_id = 0;
+    }
+
+    packet.packet_id = packet_id;
+    packet.checksum = packet.calculateChecksum(packet);
+    packets[packet_id] = packet;
   }
+
   return packets;
+}
+
+// Checks if there is a start and end to this map and if the number of elements
+// given in the first packet is the same with the number of elements received;
+std::string CustomPacket::composedMessage(
+    const std::map<uint16_t, CustomPacket> &receivedPackets) {
+  int expectedPacketCount = -1; // Unknown initially
+  int receivedPacketCount = 0;
+  uint16_t startPacketId = 0;
+  bool hasEndPacket = false;
+
+  for (const auto &pair : receivedPackets) {
+    const CustomPacket &packet = pair.second; // Access the packet from the map
+
+    // If we find a start packet, extract the expected number of packets
+    if (packet.get_start_transmition_flag()) {
+      std::string countStr(packet.payload, packet.length);
+      try {
+        expectedPacketCount = std::stoi(countStr);
+      } catch (...) {
+        std::cerr << "Error: Invalid start packet format.\n";
+        return "";
+      }
+      startPacketId = packet.packet_id; // Store its ID
+      continue;                         // Do not add start packet to the map
+    }
+
+    receivedPacketCount++;
+
+    if (packet.get_end_transmition_flag()) {
+      hasEndPacket = true;
+    }
+  }
+
+  // Ensure we received all expected packets
+  if (expectedPacketCount == -1 || receivedPacketCount < expectedPacketCount ||
+      !hasEndPacket) {
+    std::cerr << "Error: Missing packets or end flag not received.\n";
+    return "";
+  }
+
+  // Now, reconstruct the message
+  std::string message;
+  for (const auto &pair : receivedPackets) {
+    const CustomPacket &packet = pair.second;
+    message.append(packet.payload, packet.length);
+  }
+
+  return message;
 }
