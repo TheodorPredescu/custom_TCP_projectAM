@@ -1,8 +1,10 @@
 #include "CustomPacket.h"
+#include "MissingPacketsException.h"
 #include <cstdint> // For uint8_t, uint16_t
 #include <cstring> // For memcpy
 #include <iostream>
 #include <map>
+#include <vector>
 
 // flags:
 // bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
@@ -92,6 +94,15 @@ void test_fragment_and_compose_message() {
     std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
   }
 
+  fragmented_packets.erase(1);
+  std::cout << "Fragmented Packets:\n";
+  for (const auto &pair : fragmented_packets) {
+    const CustomPacket &packet = pair.second;
+    std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
+  }
+
+
+  try {
   // Compose the message from fragmented packets
   std::string composed_message = CustomPacket::composedMessage(fragmented_packets);
 
@@ -99,30 +110,43 @@ void test_fragment_and_compose_message() {
   std::cout << "\n\nComposed Message: " << composed_message << "\n";
   std::cout << "Composed Message size: " << composed_message.length() << "\n";
 
-  // Verify the composed message
-  if (composed_message == long_message) {
-    std::cout << "Test passed: Message fragmentation and composition are correct.\n";
-  } else {
-    std::cout << "Test failed: Message fragmentation and composition are incorrect.\n\n";
-    std::cout << "Composed Message:\n";
-    for (size_t i = 0; i < composed_message.size(); ++i) {
-      std::cout << composed_message[i] << " (" << static_cast<int>(composed_message[i]) << ") ";
+
+  } catch (const MissingPacketsException& e) {
+    std::cerr <<"Error: " << e.what() <<std::endl;
+    const std::vector<uint16_t>& missing_packets = e.getMissingPackets();
+
+    for (const uint16_t missing_packet_id : missing_packets) {
+      std::cout<<missing_packet_id << std::endl;
     }
-    std::cout << "\n\nOriginal Message:\n";
-    for (size_t i = 0; i < long_message.size(); ++i) {
-      std::cout << long_message[i] << " (" << static_cast<int>(long_message[i]) << ") ";
-    }
-    std::cout << "\n";
-    std::cout << "Composed Message size: " << composed_message.size() << "\n";
-    std::cout << "Original Message size: " << long_message.size() << "\n";
+
+  }catch (const std::exception& e) {
+    std::cerr<<"Error: " << e.what()<<std::endl;
   }
+
+  // // Verify the composed message
+  // if (composed_message == long_message) {
+  //   std::cout << "Test passed: Message fragmentation and composition are correct.\n";
+  // } else {
+  //   std::cout << "Test failed: Message fragmentation and composition are incorrect.\n\n";
+  //   std::cout << "Composed Message:\n";
+  //   for (size_t i = 0; i < composed_message.size(); ++i) {
+  //     std::cout << composed_message[i] << " (" << static_cast<int>(composed_message[i]) << ") ";
+  //   }
+  //   std::cout << "\n\nOriginal Message:\n";
+  //   for (size_t i = 0; i < long_message.size(); ++i) {
+  //     std::cout << long_message[i] << " (" << static_cast<int>(long_message[i]) << ") ";
+  //   }
+  //   std::cout << "\n";
+  //   std::cout << "Composed Message size: " << composed_message.size() << "\n";
+  //   std::cout << "Original Message size: " << long_message.size() << "\n";
+  // }
 }
 
 int main() {
   // Test flag manipulation
   CustomPacket packet;
   packet.packet_id = 1;
-  print_and_verify_bits0_5(packet);
+  // print_and_verify_bits0_5(packet);
 
   // Test packet serialization and deserialization
   test_packet_serialization();

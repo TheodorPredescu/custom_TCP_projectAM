@@ -1,5 +1,6 @@
 // CustomPacket.cpp
 #include "CustomPacket.h"
+#include "MissingPacketsException.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -79,7 +80,7 @@ bool CustomPacket::get_ack_flag() const { return (flags & 0x02) != 0; }
 void CustomPacket::set_urgent_flag() { flags |= 0x01; }
 bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 
-//--------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Fragment a message into multiple packets
 // It does add packet id because it was needed (switched to map)
 // It does add checksumm so that all is done here
@@ -109,13 +110,6 @@ CustomPacket::fragmentMessage(const std::string &message,
     memcpy(start_packet.payload, length_ser.data(), length_ser.length());
     start_packet.payload[length_ser.length()] = '\0'; // Add null terminator
     start_packet.length = length_ser.length() + 1; // Include null terminator in length
-
-    // increment the packet_id so that it does not repeat
-    // packet_id += 1;
-    // if (packet_id >= uint16_max) {
-    //   std::cerr << "warning: packet id overflow. resetting...\n";
-    //   packet_id = 0;
-    // }
 
     CustomPacket::incrementPacketId(packet_id);
     start_packet.packet_id = packet_id;
@@ -162,7 +156,7 @@ CustomPacket::fragmentMessage(const std::string &message,
   return packets;
 }
 
-//--------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------
 // Checks if there is a start and end to this map and if the number of elements
 // given in the first packet is the same with the number of elements received;
 std::string CustomPacket::composedMessage(
@@ -187,7 +181,7 @@ std::string CustomPacket::composedMessage(
         expectedPacketCount = std::stoi(countStr);
       } catch (...) {
         std::cerr << "Error: Invalid start packet format.\n";
-        return "";
+        throw std::runtime_error("Invalid start packet format");
       }
       startPacketId = packet.packet_id; // Store its ID
       continue;                         // Do not add start packet to the map
@@ -210,7 +204,14 @@ std::string CustomPacket::composedMessage(
   if (expectedPacketCount == -1 || receivedPacketCount != expectedPacketCount ||
       !hasEndPacket) {
     std::cerr << "Error: Missing packets or end flag not received.\n";
-    return "";
+    // throw MissingPacketsException(not_recived_packages, expectedPacketCount == -1);
+  }
+
+  if (expectedPacketCount == -1) {
+    std::cerr << "Error: No starting packet\n\t"
+          "It is needed a starting packet to know the dimention of the message!!!\n"
+          "\tSending request for a new starting packet.\n\n";
+    throw MissingPacketsException(not_recived_packages, true);
   }
 
   // Now, reconstruct the message
@@ -238,9 +239,10 @@ std::string CustomPacket::composedMessage(
     CustomPacket::incrementPacketId(i);
   }
 
-  // TODO: Created logic for sending a request for the packets that did not make it 
-  // using the vector not_recived_packages
-
+  //We try to use try catch first, waiting for results and trying new things
+  if (!not_recived_packages.empty()) {
+    throw MissingPacketsException(not_recived_packages, false);
+  }
 
   return message;
 }
