@@ -45,7 +45,7 @@ void test_packet_serialization() {
   packet.set_start_transmition_flag();
   strcpy(packet.payload, "Hello, custom protocol!");
   packet.length = strlen(packet.payload);
-  packet.checksum = packet.calculateChecksum(packet);
+  packet.checksum = packet.calculateChecksum();
 
   // Serialize packet
   uint8_t buffer[sizeof(CustomPacket)];
@@ -94,7 +94,9 @@ void test_fragment_and_compose_message() {
     std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
   }
 
-  fragmented_packets.erase(1);
+  if (fragmented_packets.find(2) != fragmented_packets.end()){
+    fragmented_packets[2].checksum = 1243;
+  }
   std::cout << "Fragmented Packets:\n";
   for (const auto &pair : fragmented_packets) {
     const CustomPacket &packet = pair.second;

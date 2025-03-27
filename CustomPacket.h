@@ -29,10 +29,10 @@ struct CustomPacket {
   static std::map<u_int16_t, CustomPacket>
   fragmentMessage(const std::string &message, u_int16_t &packet_id);
   static std::string
-  composedMessage(const std::map<uint16_t, CustomPacket> &map_packets);
+  composedMessage(std::map<uint16_t, CustomPacket> &map_packets);
   static void incrementPacketId(uint16_t &packet_id);
 
-  uint16_t calculateChecksum(const CustomPacket &packet);
+  uint16_t calculateChecksum() const;
   void serialize(uint8_t *buffer) const;
   static CustomPacket deserialize(const uint8_t *buffer);
   bool getMsgType() const;
