@@ -1,10 +1,14 @@
-#include "CustomPacket.h"
-#include "MissingPacketsException.h"
 #include <cstdint> // For uint8_t, uint16_t
 #include <cstring> // For memcpy
 #include <iostream>
 #include <map>
 #include <vector>
+#include <thread>
+#include <chrono>
+
+#include "CustomPacket.h"
+#include "MissingPacketsException.h"
+#include "Peer.h"
 
 // flags:
 // bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
@@ -145,6 +149,40 @@ void test_fragment_and_compose_message() {
   // }
 }
 
+void test_peer_class() {
+  // Create a Peer instance
+  Peer peer;
+
+  // Start the peer on a specific port (e.g., 8080)
+  std::cout << "Starting peer on port 8080...\n";
+  peer.startPeer(8080);
+
+  // Simulate sending a message
+  std::string test_message = "Hello, this is a test message!";
+  std::cout << "Sending message: " << test_message << "\n";
+  peer.sendMessage(test_message);
+
+  // Simulate receiving and processing packets
+  std::thread listener_thread([&peer]() {
+    std::cout << "Listening for packets...\n";
+    peer.listenForPackets();
+  });
+
+  std::thread processor_thread([&peer]() {
+    std::cout << "Processing packets...\n";
+    peer.processPackets();
+  });
+
+  // Let the threads run for a short time (simulate activity)
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  // Clean up threads (in a real-world scenario, you'd have a proper shutdown mechanism)
+  listener_thread.detach();
+  processor_thread.detach();
+
+  std::cout << "Peer test completed.\n";
+}
+
 int main() {
   // Test flag manipulation
   CustomPacket packet;
@@ -152,11 +190,14 @@ int main() {
   // print_and_verify_bits0_5(packet);
 
   // Test packet serialization and deserialization
-  test_packet_serialization();
+  // test_packet_serialization();
 
   // Test message fragmentation and composition
-  std::cout<<std::endl<<std::endl;
-  test_fragment_and_compose_message();
+  // std::cout<<std::endl<<std::endl;
+  // test_fragment_and_compose_message();
+
+
+  test_peer_class();
 
   return 0;
 }

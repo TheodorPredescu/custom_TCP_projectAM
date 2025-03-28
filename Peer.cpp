@@ -9,18 +9,27 @@
 #include <sys/types.h>
 #include <thread>
 #include <unistd.h>
+#include <map>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
 
 // I need to add the logic to send a string, receive a string and print it
 
 class Peer {
 public:
   void startPeer(int port, const char *remote_ip = nullptr);
-  // TO DO
-  void sendMessage(const std::string msg);
+  void sendMessage(const std::string &msg);
   void sendFile();
+  void listenForPackets();
+  void processPackets();
 
 private:
   int sock;
+
+  //The one that starts the conversation initializes the value of packet_id;
+  //expected to start with 0 for maximum longevity.
+  uint16_t packet_id = UINT16_MAX;
 
   std::mutex packet_mutex; // Mutex for thread-safe access to the packet queue
   std::queue<CustomPacket> packet_queue; // Queue to store received packets
@@ -29,17 +38,14 @@ private:
   sockaddr_in peer_addr;
   u_int16_t id_packet = 0;
 
-  void sendPacket(CustomPacket &packet);
+  void sendPacket(const CustomPacket &packet);
   void receivePacket(CustomPacket &packet);
-  void listenForPackets();
-  void processPackets();
 
-  //TODO: not done method
   void connectToPeer(const char *remote_ip);
 
   //TODO:  for later
   void composePacketMessage();
-  void sendPacketMessage();
+  // void sendPacketMessage(const std::string &msg);
 
   //TODO: for much later
   void composePacketFile();
@@ -47,12 +53,15 @@ private:
 };
 
 // gets a package and sends it to the socket sock
-// working to make it decent with bigger package
-void Peer::sendPacket(CustomPacket &packet) {
+void Peer::sendPacket(const CustomPacket &packet) {
   uint8_t buffer[sizeof(CustomPacket)];
   packet.serialize(buffer);
-  send(sock, buffer, sizeof(buffer), 0);
-  std::cout << "Packet sent to: " << sock << "\n";
+  ssize_t bytes_sent = send(sock, buffer, sizeof(buffer), 0);
+  if (bytes_sent < 0) {
+    std::cerr << "Error sending packet with ID " << packet.packet_id << "\n";
+  } else {
+    std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
+  }
 }
 
 // TODO check everithing
@@ -73,6 +82,7 @@ void Peer::startPeer(int port, const char *remote_ip) {
     }
 
     connectToPeer(remote_ip);
+    id_packet = 0;
 
   } else {
     peer_addr.sin_addr.s_addr = INADDR_ANY;
@@ -86,6 +96,7 @@ void Peer::startPeer(int port, const char *remote_ip) {
     listen(sock, 3);
   }
 
+  std::cerr<<"Worked till here.\n";
   // Start threads for receiving and processing packets
   std::thread receiver(&Peer::listenForPackets, this);
   std::thread processor(&Peer::processPackets, this);
@@ -115,7 +126,7 @@ void Peer::receivePacket(CustomPacket &packet) {
   uint8_t buffer[sizeof(CustomPacket)];
   int valread = read(sock, buffer, sizeof(CustomPacket));
 
-  if (valread > 0) {
+  if (valread == sizeof(CustomPacket)) {
     packet = CustomPacket::deserialize(buffer);
     std::cout << "Received Packet ID: " << packet.packet_id << "\n";
     std::cout << "Payload: " << packet.payload << "\n";
@@ -142,6 +153,10 @@ void Peer::listenForPackets() {
     CustomPacket packet;
     receivePacket(packet);
 
+    if (!packet.payload[0]) {
+      continue;
+    }
+
     // Add the packet to the queue
     {
       std::lock_guard<std::mutex> lock(packet_mutex);
@@ -167,7 +182,8 @@ void Peer::processPackets() {
 
     // Validate the packet
     if (packet.calculateChecksum() != packet.checksum) {
-      std::cerr << "Packet with ID " << packet.packet_id << " is corrupted!\n";
+      std::cerr << "Packet with ID " << packet.packet_id << 
+                  " is corrupted!\n";
       continue;
     }
 
@@ -177,17 +193,20 @@ void Peer::processPackets() {
   }
 }
 
-int main() {
-  Peer peer;
-  peer.startPeer(8080); // Start the peer on port 8080
+void Peer::sendMessage(const std::string &msg) {
+  std::map<uint16_t, CustomPacket> packet_list = 
+            CustomPacket::fragmentMessage(msg, packet_id);
 
-  // Simulate sending a message
-  peer.sendMessage("Hello, this is a test message!");
-
-  // Keep the main thread alive
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  for (const auto &packet : packet_list) {
+    sendPacket(packet.second);
   }
+}
 
-  return 0;
+void Peer::connectToPeer(const char *remote_ip) {
+  if (connect(sock, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0) {
+    std::cerr << "Connection to remote peer at " << remote_ip << " failed.\n";
+    close(sock);
+    exit(EXIT_FAILURE);
+  }
+  std::cout << "Connected to remote peer at " << remote_ip << "\n";
 }
