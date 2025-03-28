@@ -56,6 +56,10 @@ void CustomPacket::setMsgType(int msgType) {
   }
 }
 
+// error flag (the one that will contain missing packets)
+void CustomPacket::set_error_flag() {flags |= 0x01 << 5;}
+bool CustomPacket::get_error_flag() const {return (flags & (0x01 << 5)) != 0;}
+
 // start transmition flag -> the 4th bit
 void CustomPacket::set_start_transmition_flag() { flags |= 0x10; }
 bool CustomPacket::get_start_transmition_flag() const {

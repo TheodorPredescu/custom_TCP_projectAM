@@ -32,14 +32,16 @@ private:
   void sendPacket(CustomPacket &packet);
   void receivePacket(CustomPacket &packet);
   void listenForPackets();
-  void connectToPeer(const char *remote_ip);
   void processPackets();
 
-  // for later
+  //TODO: not done method
+  void connectToPeer(const char *remote_ip);
+
+  //TODO:  for later
   void composePacketMessage();
   void sendPacketMessage();
 
-  // for much later
+  //TODO: for much later
   void composePacketFile();
   void sendPacketFile();
 };

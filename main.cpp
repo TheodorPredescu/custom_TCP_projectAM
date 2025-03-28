@@ -94,6 +94,7 @@ void test_fragment_and_compose_message() {
     std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
   }
 
+  // fragmented_packets.erase(2);
   if (fragmented_packets.find(2) != fragmented_packets.end()){
     fragmented_packets[2].checksum = 1243;
   }
@@ -125,7 +126,7 @@ void test_fragment_and_compose_message() {
     std::cerr<<"Error: " << e.what()<<std::endl;
   }
 
-  // // Verify the composed message
+  // // Verify the composed messag se
   // if (composed_message == long_message) {
   //   std::cout << "Test passed: Message fragmentation and composition are correct.\n";
   // } else {
