@@ -5,10 +5,14 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
 
 #include "CustomPacket.h"
 #include "MissingPacketsException.h"
 #include "Peer.h"
+
+std::mutex cout_mutex;
 
 // flags:
 // bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
@@ -47,31 +51,44 @@ void test_packet_serialization() {
   packet.setMsgType(0); // Text message
   packet.set_ack_flag();
   packet.set_start_transmition_flag();
-  strcpy(packet.payload, "Hello, custom protocol!");
-  packet.length = strlen(packet.payload);
-  packet.checksum = packet.calculateChecksum();
+  strcpy(packet.payload, "Hello, custom protocol!"); // Set payload
+  packet.length = strlen(packet.payload);           // Set length
+  packet.checksum = packet.calculateChecksum();     // Calculate checksum
 
-  // Serialize packet
+  // Print the original packet details
+  std::cout << "Original Packet Details:\n";
+  std::cout << "Packet ID: " << packet.packet_id << "\n";
+  std::cout << "Message Type: " << (int)packet.getMsgType() << "\n";
+  std::cout << "Payload: " << packet.payload << "\n";
+  std::cout << "Length: " << packet.length << "\n";
+  std::cout << "Checksum: " << packet.checksum << "\n";
+  packet.printFlags();
+
+  // Serialize the packet
   uint8_t buffer[sizeof(CustomPacket)];
   packet.serialize(buffer);
 
-  // Deserialize packet
+  // Deserialize the packet
   CustomPacket received = CustomPacket::deserialize(buffer);
 
-  // Print received packet details
-  std::cout << "Received Packet ID: " << received.packet_id << "\n";
+  // Print the deserialized packet details
+  std::cout << "\nDeserialized Packet Details:\n";
+  std::cout << "Packet ID: " << received.packet_id << "\n";
   std::cout << "Message Type: " << (int)received.getMsgType() << "\n";
   std::cout << "Payload: " << received.payload << "\n";
+  std::cout << "Length: " << received.length << "\n";
   std::cout << "Checksum: " << received.checksum << "\n";
+  received.printFlags();
 
   // Verify the deserialized packet
   if (received.packet_id == packet.packet_id &&
       received.getMsgType() == packet.getMsgType() &&
       strcmp(received.payload, packet.payload) == 0 &&
+      received.length == packet.length &&
       received.checksum == packet.checksum) {
-    std::cout << "Test passed: Packet serialization and deserialization are correct.\n";
+    std::cout << "\nTest passed: Packet serialization and deserialization are correct.\n";
   } else {
-    std::cout << "Test failed: Packet serialization and deserialization are incorrect.\n";
+    std::cout << "\nTest failed: Packet serialization and deserialization are incorrect.\n";
   }
 }
 
@@ -150,37 +167,68 @@ void test_fragment_and_compose_message() {
 }
 
 void test_peer_class() {
-  // Create a Peer instance
-  Peer peer;
+  // Mutex and condition variable for thread synchronization
+  std::mutex sync_mutex;
+  std::condition_variable server_ready_cv;
+  bool server_ready = false;
 
-  // Start the peer on a specific port (e.g., 8080)
-  std::cout << "Starting peer on port 8080...\n";
-  peer.startPeer(8080);
+  // Mutex for thread-safe output
+  std::mutex cout_mutex;
 
-  // Simulate sending a message
-  std::string test_message = "Hello, this is a test message!";
-  std::cout << "Sending message: " << test_message << "\n";
-  peer.sendMessage(test_message);
+  // Peer 1: Server
+  std::thread server_thread([&]() {
+    Peer server_peer;
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Starting server peer on port 8080...\n";
+    }
 
-  // Simulate receiving and processing packets
-  std::thread listener_thread([&peer]() {
-    std::cout << "Listening for packets...\n";
-    peer.listenForPackets();
+    // Start the server
+    server_peer.startPeer(8080);
+
+    // Notify the client that the server is ready
+    {
+      std::lock_guard<std::mutex> lock(sync_mutex);
+      server_ready = true;
+    }
+    server_ready_cv.notify_one();
+
+    // Keep the server running
+    std::this_thread::sleep_for(std::chrono::seconds(10)); // Simulate server activity
   });
 
-  std::thread processor_thread([&peer]() {
-    std::cout << "Processing packets...\n";
-    peer.processPackets();
+  // Peer 2: Client
+  std::thread client_thread([&]() {
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Client thread started.\n";
+    }
+
+    // Wait for the server to be ready
+    {
+      std::unique_lock<std::mutex> lock(sync_mutex);
+      server_ready_cv.wait(lock, [&]() { return server_ready; });
+    }
+
+    Peer client_peer;
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Starting client peer...\n";
+    }
+
+    // Start the client and send a message
+    client_peer.startPeer(8080, "127.0.0.1");
+    client_peer.sendMessage("Hello from client!");
   });
 
-  // Let the threads run for a short time (simulate activity)
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  // Wait for both threads to finish
+  server_thread.join();
+  client_thread.join();
 
-  // Clean up threads (in a real-world scenario, you'd have a proper shutdown mechanism)
-  listener_thread.detach();
-  processor_thread.detach();
-
-  std::cout << "Peer test completed.\n";
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "Peer test completed.\n";
+  }
 }
 
 int main() {

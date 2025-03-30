@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <sys/types.h>
+#include <bitset>
 
 // Added function for increment because i was repeating myself
 void CustomPacket::incrementPacketId(uint16_t &packet_id) {
@@ -261,4 +262,16 @@ std::string CustomPacket::composedMessage(
   }
 
   return message;
+}
+
+void CustomPacket::printFlags() const {
+  std::cout << "Flags (binary): " << std::bitset<8>(static_cast<unsigned int>(flags)) << "\n";
+  std::cout << "  Encryption (enc): " << ((flags & (1 << 7)) != 0) << "\n";
+  std::cout << "  Error: " << get_error_flag() << "\n";
+  std::cout << "  Message Type (msg_type): " << getMsgType() << "\n";
+  std::cout << "  Start Transmission (start_trans): " << get_start_transmition_flag() << "\n";
+  std::cout << "  End Transmission (end_trans): " << get_end_transmition_flag() << "\n";
+  std::cout << "  Serialize (series): " << get_serialize_flag() << "\n";
+  std::cout << "  Acknowledgment (ACK): " << get_ack_flag() << "\n";
+  std::cout << "  Urgent: " << get_urgent_flag() << "\n";
 }
