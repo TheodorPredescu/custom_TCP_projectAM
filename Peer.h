@@ -20,13 +20,15 @@ public:
     void sendFile();
     void listenForPackets();
     void processPackets();
+    void endConnection();
 
 private:
     int sock;
 
-    uint16_t packet_id = 0;
+    uint16_t packet_id = UINT16_MAX;
 
     std::mutex packet_mutex;
+    std::mutex packet_id_mutex;
     std::vector<CustomPacket> packet_vector;
     std::condition_variable packet_cv;
 
@@ -45,6 +47,7 @@ private:
 
     //new debugging method
     void sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &dest_addr);
+    void incrementing_and_checking_packet_id(const uint16_t &idpacket);
 };
 
 #endif // PEER_H

@@ -219,6 +219,8 @@ void test_peer_class() {
     // Start the client and send a message
     client_peer.startPeer(8080, "127.0.0.1");
     client_peer.sendMessage("Hello from client!");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    client_peer.sendMessage("Hello again!");
   });
 
   // Wait for both threads to finish

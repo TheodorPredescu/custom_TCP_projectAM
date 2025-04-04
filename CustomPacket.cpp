@@ -14,7 +14,7 @@
 // Added function for increment because i was repeating myself
 void CustomPacket::incrementPacketId(uint16_t &packet_id) {
   packet_id += 1;
-  if (packet_id >= UINT16_MAX) {
+  if (packet_id >= UINT16_MAX - 1) {
     std::cerr << "Warning: Packet ID overflow. Resetting...\n";
     packet_id = 0;
   }
