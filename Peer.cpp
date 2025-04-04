@@ -310,7 +310,7 @@ void Peer::listenForPackets() {
         ack_packet.length = 0;
         ack_packet.checksum - ack_packet.calculateChecksum();
 
-        send(ack_packet);
+        sendPacket(ack_packet);
 
       }
       {
@@ -329,6 +329,13 @@ void Peer::listenForPackets() {
 
 //-------------------------------------------------------------------------------------------------------
 void Peer::processPackets() {
+  std::map<uint16_t, std::string> msg_log;
+  std::map<uint16_t, std::string> long_message;
+  std::string msg = "";
+  u_int16_t start = UINT16_MAX, end = UINT16_MAX;
+  int size_long_msg = 0;
+  std::vector<uint16_t> missing_packets;
+
   while (true) {
     CustomPacket packet;
 
@@ -338,7 +345,7 @@ void Peer::processPackets() {
       packet_cv.wait(lock, [this] { return !packet_vector.empty(); });
 
       {
-        std::lock_guard<std::mutex> cout_lock(cout_mutex);
+        std::lock_guard<std::mutex> lock(cout_mutex);
         std::cout << "Processing a packet from the queue.\nSize: " << packet_vector.size() << std::endl;
       }
 
@@ -352,7 +359,7 @@ void Peer::processPackets() {
     // Validate the packet
     if (packet.calculateChecksum() != packet.checksum) {
       {
-        std::lock_guard<std::mutex> cout_lock(cout_mutex);
+        std::lock_guard<std::mutex> lock(cout_mutex);
         std::cerr << "Packet with ID " << packet.packet_id
                   << " is corrupted!\n";
       }
@@ -361,9 +368,91 @@ void Peer::processPackets() {
 
     // Process the packet (e.g., add to a map, reconstruct a message, etc.)
     {
-      std::lock_guard<std::mutex> cout_lock(cout_mutex);
+      std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout << "Processing Packet ID: " << packet.packet_id << "\n";
       std::cout << "Payload: " << packet.payload << "\n";
+    }
+
+    if (!packet.get_serialize_flag()) {
+      msg_log.emplace(packet.packet_id, std::string(packet.payload, packet.length));
+    }else {
+
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout<< "Got to the serialize section.\n";
+      }
+
+      //TODO: For longer messages; I need to recheck for 2 long messages back to back
+      //The first packet (the one with the start) has in payload the number of packets from that 
+      long_message.emplace(packet_id, std::string(packet.payload, packet.length));
+
+      //Starting packet for log message checking
+      // if (packet.get_start_transmition_flag() && start != UINT16_MAX) {
+      //   std::lock_guard<std::mutex> lock(cout_mutex);
+      //   std::cout<<"Error processing a packet!!!!!\n\tWe have 2 starting packets\n";
+      //   return;
+      // }
+      // if (packet.get_start_transmition_flag() && start == UINT16_MAX) {
+      //   start = packet.packet_id;
+      // }
+
+      // // Ending packet for long message checking
+      // if (packet.get_end_transmition_flag() && end != UINT16_MAX) {
+      //   std::lock_guard<std::mutex> lock(cout_mutex);
+      //   std::cout<<"Error processing a packet!!!!!\n\tWe have 2 ending packets\n";
+      //   return;
+      // }
+
+      // if (packet.get_end_transmition_flag() && end == UINT16_MAX) {
+      //   end = packet.packet_id;
+      // }
+
+      if (packet.get_start_transmition_flag()) {
+        size_long_msg = std::stoi(std::string(packet.payload, packet.length));
+        start = packet.packet_id;
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<< "Foud the start transmition packet. Number of packets in this train is: " << size_long_msg << std::endl;
+        }
+      }
+      //TODO: size_long_msg is reseting for some reason
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<< "size_long_msg: " << size_long_msg << ", long_message.size(): " <<static_cast<int>(long_message.size()) << std::endl;
+        }
+
+      if (size_long_msg != 0 && size_long_msg <= static_cast<int>(long_message.size())) {
+        for (int i = 0; i <size_long_msg; ++i) {
+          uint16_t current_packet_id = start + i;
+
+          auto it = long_message.find(current_packet_id);
+          if (it != long_message.end()) {
+            msg += it->second;
+          }else {
+            missing_packets.push_back(current_packet_id);
+          }
+        }
+
+        if (!missing_packets.empty()) {
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout<< "There are missing packets!\n";
+          }
+          throw missing_packets;
+        }
+
+        long_message.clear();
+        start = UINT16_MAX;
+        size_long_msg = 0;
+
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "\tBIG MESSAGE:\n\t" << msg << "\n";
+        }
+
+        msg.clear();
+      }
+
     }
 
     incrementing_and_checking_packet_id(packet.packet_id);
