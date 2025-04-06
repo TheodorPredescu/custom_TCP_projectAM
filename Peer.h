@@ -35,6 +35,8 @@ private:
     sockaddr_in peer_addr, client_addr;
     bool client_addr_initialized = false; // Track if the client's address is initialized
 
+    int serialise_packet_size = 0, procesed_packets = 0;
+
 
     bool is_connected = false;
 

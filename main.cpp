@@ -227,8 +227,14 @@ void test_peer_class() {
                              "cumpărării a multiple bilete simultan. "
                              "Dacă în coș se află cel puțin un bilet, vor apărea două butoane: textit{} și textit{}, ce vor oferi posibilitatea de a șterge din coșul "
                              "curent biletul selectat, dar și de a finaliza cumpărarea, adăugând biletele în istoric și golind coșul.");
-    // std::this_thread::sleep_for(std::chrono::seconds(3));
-    // client_peer.sendMessage("Hello again!");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    client_peer.sendMessage("Site-ul are în pagina (pagina textit) două butoare disponibile extit șiextit, al doilea "
+                             "fiind pentru crearea de utilizator nou al aplicației (orice utilizator va trebui să-și facă cont pentru a putea cumpăra bilete), "
+                             "iar primul pentru a te conecta la un cont deja existent. "
+                             "Pentru conectarea la un cont este nevoie doar de textitși de textit{parola} contului. Conectarea la un cont ne va oferi "
+                             "posibilitatea de a vizualiza istoricul biletelor cumpărate (dacă există), cursele ce vor avea loc și lista locurilor libere din avion. "
+                             "Prin apăsarea pe un loc liber, acel bilet va fi adaugat în coșul utilizatorului. Această acțiune poate fi repetată pentru posibilitatea "
+                             "cumpărării a multiple bilete simultan. ");
   });
 
   // Wait for both threads to finish
