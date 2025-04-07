@@ -199,9 +199,11 @@ void Peer::receivePacket(CustomPacket &packet) {
   // }
 
   if (bytes_read <= 0) {
-    std::cerr << "Error reading from socket.\n";
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "Error reading from socket.\n";
     return;
   }else {
+    std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout<< "I have received a packet!\n";
   }
 
@@ -259,7 +261,9 @@ void Peer::listenForPackets() {
         ack_packet.packet_id = packet_id;
         ack_packet.set_urgent_flag();
         ack_packet.set_ack_flag();
-        ack_packet.length = 0; // No payload for the acknowledgment packet
+        std::string msg= "ack";
+        memcpy(ack_packet.payload, msg.data(), msg.size());
+        ack_packet.length = msg.size();
         ack_packet.checksum = ack_packet.calculateChecksum();
 
         // Send the acknowledgment packet using the stored client address
@@ -288,6 +292,12 @@ void Peer::listenForPackets() {
       }
     } else {
 
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Is connected branch\n";
+        }
+
+
       //if it is already connected, but it still tries to connect to it (from some reason)
       if (packet.get_urgent_flag() && packet.get_start_transmition_flag()) {
         std::lock_guard<std::mutex> lock (cout_mutex);
@@ -295,11 +305,12 @@ void Peer::listenForPackets() {
         continue;
       }
       
-      // If end transmition sequense started the iniciator sends 2 packages and the 
-      // TODO: 
+      // If end transmition sequense started the initiation
       if (packet.get_urgent_flag() && packet.get_end_transmition_flag()) {
-        std::lock_guard<std::mutex> lock (cout_mutex);
-        std::cout<< "Receaved end transmition packet. Responding...\n";
+        {
+          std::lock_guard<std::mutex> lock (cout_mutex);
+          std::cout<< "Receaved end transmition packet. Responding...\n";
+        }
         
         incrementing_and_checking_packet_id(packet.packet_id);
 
@@ -307,12 +318,31 @@ void Peer::listenForPackets() {
         ack_packet.packet_id = packet_id;
         ack_packet.set_ack_flag();
         ack_packet.set_urgent_flag();
-        ack_packet.length = 0;
-        ack_packet.checksum - ack_packet.calculateChecksum();
+
+        std::string msg= "ack";
+        memcpy(ack_packet.payload, msg.data(), msg.size());
+        ack_packet.length = msg.size();
+        ack_packet.checksum = ack_packet.calculateChecksum();
 
         sendPacket(ack_packet);
+        {
+          std::lock_guard<std::mutex> lock (cout_mutex);
+          std::cout<< "Sended packet with ack of end transmition...:\n";
+          ack_packet.printFlags();
+        }
+        this->is_connected = false;
+
+        // Close the socket
+        close(sock);
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Socket closed.\n";
+        }
+
+        return;
 
       }
+
       {
       // Add the packet to the queue
         std::lock_guard<std::mutex> lock(packet_mutex);
@@ -512,9 +542,9 @@ void Peer::connectToPeer(const char *remote_ip) {
   start_packet.packet_id = packet_id;
   start_packet.set_urgent_flag();
   start_packet.set_start_transmition_flag();
+
   std::string msg= "HELLO!";
   memcpy(start_packet.payload, msg.data(), msg.size());
-
   start_packet.length = msg.size();
   start_packet.checksum = start_packet.calculateChecksum();
 
@@ -538,7 +568,7 @@ void Peer::connectToPeer(const char *remote_ip) {
       break;
     } else {
       std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Received a packet, but it does not have the expected flags. Waiting...\n";
+      std::cout << "?Received a packet, but it does not have the expected flags. Waiting...\n";
     }
   }
 
@@ -577,7 +607,10 @@ void Peer::endConnection() {
     end_packet.packet_id = packet_id;
     end_packet.set_urgent_flag();
     end_packet.set_end_transmition_flag();
-    end_packet.length = 0; // No payload for the end connection packet
+    std::string msg= "end";
+    memcpy(end_packet.payload, msg.data(), msg.size());
+
+    end_packet.length = msg.size();
     end_packet.checksum = end_packet.calculateChecksum();
   }
 
@@ -587,6 +620,7 @@ void Peer::endConnection() {
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "Sent end connection packet with ID: " << end_packet.packet_id << "\n";
+    end_packet.printFlags();
   }
 
   // Wait for acknowledgment
@@ -597,13 +631,13 @@ void Peer::endConnection() {
     if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Received acknowledgment for end connection packet.\n";
+        std::cout << "\n\nReceived acknowledgment for end connection packet.\n";
       }
       break;
     } else {
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Received a packet, but it does not have the expected flags. Waiting...\n";
+        std::cout << "\n\nReceived a packet in waiting for ack, but it does not have the expected flags. Waiting...\n";
       }
     }
   }
