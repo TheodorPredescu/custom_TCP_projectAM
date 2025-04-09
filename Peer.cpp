@@ -53,7 +53,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
   ip_header->ihl = 5; // Header length (5 * 4 = 20 bytes)
   ip_header->tos = 0; // Type of service
   ip_header->tot_len = htons(sizeof(buffer)); // Total length (header + payload)
-  ip_header->id = htons(54321); // Identification
+  ip_header->id = htons(packet.packet_id); // Identification
   ip_header->frag_off = 0; // No fragmentation
   ip_header->ttl = 64; // Time to live
   ip_header->protocol = IPPROTO_RAW; // Protocol (raw socket)
@@ -88,7 +88,7 @@ void Peer::sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &de
   ip_header->ihl = 5; // Header length (5 * 4 = 20 bytes)
   ip_header->tos = 0; // Type of service
   ip_header->tot_len = htons(sizeof(buffer)); // Total length (header + payload)
-  ip_header->id = htons(54321); // Identification
+  ip_header->id = htons(packet.packet_id); // Identification
   ip_header->frag_off = 0; // No fragmentation
   ip_header->ttl = 64; // Time to live
   ip_header->protocol = IPPROTO_RAW; // Protocol (raw socket)
@@ -182,21 +182,11 @@ void Peer::startPeer(int port, const char *remote_ip) {
 // MET
 void Peer::receivePacket(CustomPacket &packet) {
 
-  // uint8_t buffer[sizeof(CustomPacket)];
   uint8_t buffer[sizeof(struct iphdr) + sizeof(CustomPacket)];
   socklen_t addr_len = sizeof(peer_addr);
 
-  // {
-  //   std::lock_guard<std::mutex> lock(cout_mutex);
-  //   std::cout << "Received Packet?\n";
-  // }
   ssize_t bytes_read = recvfrom(sock, buffer, sizeof(buffer), 0,
                                 (struct sockaddr *)&peer_addr, &addr_len);
-
-  // {
-  //   std::lock_guard<std::mutex> lock(cout_mutex);
-  //   std::cout << "\nReceived Packet!!\n";
-  // }
 
   if (bytes_read <= 0) {
     std::lock_guard<std::mutex> lock(cout_mutex);
@@ -207,10 +197,7 @@ void Peer::receivePacket(CustomPacket &packet) {
     std::cout<< "I have received a packet!\n";
   }
 
-  // packet = CustomPacket::deserialize(buffer);
-  // Skip the IP header and deserialize the payload
   packet = CustomPacket::deserialize(buffer + sizeof(struct iphdr));
-
 
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
@@ -252,27 +239,18 @@ void Peer::listenForPackets() {
 
         // Store the client's address
         client_addr = peer_addr;
-        client_addr_initialized = true;
+        // client_addr_initialized = true;
 
         incrementing_and_checking_packet_id(packet.packet_id);
+        sendPacket(create_ack_packet());
 
-        // Create the acknowledgment packet
-        CustomPacket ack_packet;
-        ack_packet.packet_id = packet_id;
-        ack_packet.set_urgent_flag();
-        ack_packet.set_ack_flag();
-        std::string msg= "ack";
-        memcpy(ack_packet.payload, msg.data(), msg.size());
-        ack_packet.length = msg.size();
-        ack_packet.checksum = ack_packet.calculateChecksum();
-
-        // Send the acknowledgment packet using the stored client address
-        if (client_addr_initialized) {
-          // sendPacketTo(ack_packet, client_addr);
-          sendPacket(ack_packet);
-        } else {
-          std::cerr << "Error: Client address not initialized. Cannot send acknowledgment.\n";
-        }
+        // // Send the acknowledgment packet using the stored client address
+        // if (client_addr_initialized) {
+        //   // sendPacket(ack_packet);
+        //   sendPacket(create_ack_packet());
+        // } else {
+        //   std::cerr << "Error: Client address not initialized. Cannot send acknowledgment.\n";
+        // }
 
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
@@ -314,21 +292,21 @@ void Peer::listenForPackets() {
         
         incrementing_and_checking_packet_id(packet.packet_id);
 
-        CustomPacket ack_packet;
-        ack_packet.packet_id = packet_id;
-        ack_packet.set_ack_flag();
-        ack_packet.set_urgent_flag();
+        // CustomPacket ack_packet;
+        // ack_packet.packet_id = packet_id;
+        // ack_packet.set_ack_flag();
+        // ack_packet.set_urgent_flag();
+        // std::string msg= "ack";
+        // memcpy(ack_packet.payload, msg.data(), msg.size());
+        // ack_packet.length = msg.size();
+        // ack_packet.checksum = ack_packet.calculateChecksum();
 
-        std::string msg= "ack";
-        memcpy(ack_packet.payload, msg.data(), msg.size());
-        ack_packet.length = msg.size();
-        ack_packet.checksum = ack_packet.calculateChecksum();
+        // sendPacket(ack_packet);
 
-        sendPacket(ack_packet);
+        sendPacket(create_ack_packet());
         {
           std::lock_guard<std::mutex> lock (cout_mutex);
           std::cout<< "Sended packet with ack of end transmition...:\n";
-          ack_packet.printFlags();
         }
         this->is_connected = false;
 
@@ -490,8 +468,6 @@ void Peer::processPackets() {
 
         msg.clear();
       }
-
-
     }
 
     incrementing_and_checking_packet_id(packet.packet_id);
@@ -580,12 +556,12 @@ void Peer::connectToPeer(const char *remote_ip) {
 }
 
 //-------------------------------------------------------------------------------------------------------
-void Peer::incrementing_and_checking_packet_id(const uint16_t &idpacket) {
+void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_received) {
 
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 
-  if (packet_id < idpacket || packet_id == UINT16_MAX) {
-    packet_id = idpacket;
+  if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
+    packet_id = packet_id_received;
     CustomPacket::incrementPacketId(packet_id);
   } else {
     std::lock_guard<std::mutex> lock(cout_mutex);
@@ -594,6 +570,9 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &idpacket) {
 }
 
 //-------------------------------------------------------------------------------------------------------
+// I need to send another message: when i receive a request to end the socket, i need to send an 
+// ack packet and w8 to see if that packet gets to the user. If i dont, the iniciator can wait for
+// my ack and never get it.
 void Peer::endConnection() {
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
@@ -653,6 +632,26 @@ void Peer::endConnection() {
   close(sock);
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "Socket closed.\n";
+    std::cout << "socket closed.\n";
   }
+
+}
+//-------------------------------------------------------------------------------------------------------
+CustomPacket Peer::create_ack_packet () {
+
+  // Create the acknowledgment packet
+  CustomPacket ack_packet;
+  {
+    std::lock_guard<std::mutex> lock(packet_id_mutex);
+    ack_packet.packet_id = packet_id;
+  }
+  ack_packet.set_urgent_flag();
+  ack_packet.set_ack_flag();
+  std::string msg= "ack";
+  memcpy(ack_packet.payload, msg.data(), msg.size());
+  ack_packet.length = msg.size();
+  ack_packet.checksum = ack_packet.calculateChecksum();
+
+  return ack_packet;
+
 }
