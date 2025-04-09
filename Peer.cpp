@@ -291,18 +291,6 @@ void Peer::listenForPackets() {
         }
         
         incrementing_and_checking_packet_id(packet.packet_id);
-
-        // CustomPacket ack_packet;
-        // ack_packet.packet_id = packet_id;
-        // ack_packet.set_ack_flag();
-        // ack_packet.set_urgent_flag();
-        // std::string msg= "ack";
-        // memcpy(ack_packet.payload, msg.data(), msg.size());
-        // ack_packet.length = msg.size();
-        // ack_packet.checksum = ack_packet.calculateChecksum();
-
-        // sendPacket(ack_packet);
-
         sendPacket(create_ack_packet());
         {
           std::lock_guard<std::mutex> lock (cout_mutex);
@@ -318,6 +306,14 @@ void Peer::listenForPackets() {
         }
 
         return;
+
+      }
+
+      if (packet.get_error_flag()) {
+        {
+          std::lock_guard<std::mutex> lock (cout_mutex);
+          std::cout << "Received a packet that has info about packets that did not make it";
+        }
 
       }
 
@@ -382,6 +378,30 @@ void Peer::processPackets() {
 
     if (!packet.get_serialize_flag()) {
       msg_log.emplace(packet.packet_id, std::string(packet.payload, packet.length));
+
+      // If i receive a packet that its not in the interval precizated
+      if (start != UINT16_MAX && end != UINT16_MAX && 
+         !(start < packet.packet_id && packet.packet_id <= start + serialise_packet_size)) {
+
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Not all packets are received!\tSending the missing packets";
+        }
+
+        // TODO: I need to add logic for dealing with this !!
+        if (!missing_packets.empty()) {
+          for (const auto &it : missing_packets) {
+            sendPacket(create_error_packet(it));
+            {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "Sending request for resend for: " << static_cast<int>(it);
+            }
+          }
+          missing_packets.clear();
+
+          continue;
+        }
+      }
     }else {
 
       {
@@ -416,9 +436,8 @@ void Peer::processPackets() {
         std::cout<< "We are adding the packet "<< packet.packet_id <<" in the big message!\n";
       }
 
-      //TODO: For longer messages; I need to recheck for 2 long messages back to back
       //The first packet (the one with the start) has in payload the number of packets from that 
-      if (long_message.find(packet.packet_id) == long_message.end()) {
+      if (long_message.find(packet.packet_id) == long_message.end() && serialise_packet_size != 0) {
         long_message.emplace(packet.packet_id, std::string(packet.payload, packet.length));
         procesed_packets++; 
       }else {
@@ -426,11 +445,10 @@ void Peer::processPackets() {
         std::cout<< "\n\n\tWe have a duplicate\n\n\n";
       }
 
-      //TODO: size_long_msg is reseting for some reason
-        {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout<< "\n\nsize_long_msg: " << serialise_packet_size << " ; packets processed: " <<procesed_packets << std::endl;
-        }
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout<< "\n\nsize_long_msg: " << serialise_packet_size << " ; packets processed: " <<procesed_packets << std::endl;
+      }
 
       if (serialise_packet_size != 0 && serialise_packet_size == procesed_packets) {
         for (int i = 1; i <serialise_packet_size + 1; ++i) {
@@ -479,6 +497,9 @@ void Peer::sendMessage(const std::string &msg) {
   std::map<uint16_t, CustomPacket> packet_list =
       CustomPacket::fragmentMessage(msg, packet_id);
 
+  // I will add it to the new buffer to deal with the error packet if need be
+  add_packets_to_history(packet_list);
+
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
     {
@@ -500,7 +521,7 @@ void Peer::connectToPeer(const char *remote_ip) {
 
   // Set up the destination address
   peer_addr.sin_family = AF_INET;
-  peer_addr.sin_port = htons(8080); // Example port
+  peer_addr.sin_port = htons(8080); // port
   if (inet_pton(AF_INET, remote_ip, &peer_addr.sin_addr) <= 0) {
     std::cerr << "Invalid address/Address not supported: " << remote_ip << "\n";
     return;
@@ -610,7 +631,7 @@ void Peer::endConnection() {
     if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "\n\nReceived acknowledgment for end connection packet.\n";
+        std::cout << "\nReceived acknowledgment for end connection packet.\n";
       }
       break;
     } else {
@@ -635,9 +656,15 @@ void Peer::endConnection() {
     std::cout << "socket closed.\n";
   }
 
+  // For checking functionality and contents (debug)
+  for (const auto &[key, val] : packetsToBeSend) {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << key << "; " << std::string(val.payload, val.length) << "\n";
+  }
+
 }
 //-------------------------------------------------------------------------------------------------------
-CustomPacket Peer::create_ack_packet () {
+CustomPacket Peer::create_ack_packet() {
 
   // Create the acknowledgment packet
   CustomPacket ack_packet;
@@ -654,4 +681,31 @@ CustomPacket Peer::create_ack_packet () {
 
   return ack_packet;
 
+}
+//-------------------------------------------------------------------------------------------------------
+CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const {
+
+  // Create the acknowledgment packet
+  CustomPacket error_packet;
+  
+  error_packet.packet_id = missing_packet_id;
+  error_packet.set_error_flag();
+  std::string msg= "error";
+  memcpy(error_packet.payload, msg.data(), msg.size());
+  error_packet.length = msg.size();
+  error_packet.checksum = error_packet.calculateChecksum();
+
+  return error_packet;
+
+}
+//-------------------------------------------------------------------------------------------------------
+void Peer::add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list){
+  for (const auto &pair : packet_list) {
+    while (packetsToBeSend.size() > size_of_packetsToBeSend) {
+      auto oldest = packetsToBeSend.begin();
+      packetsToBeSend.erase(oldest);
+    }
+
+    packetsToBeSend[pair.first] = pair.second;
+  }
 }

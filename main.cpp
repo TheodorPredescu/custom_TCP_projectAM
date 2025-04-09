@@ -195,6 +195,8 @@ void test_peer_class() {
 
     // Keep the server running
     std::this_thread::sleep_for(std::chrono::seconds(10)); // Simulate server activity
+    // server_peer.endConnection();
+    // std::this_thread::sleep_for(std::chrono::seconds(3)); // Simulate server activity
   });
 
   // Peer 2: Client
