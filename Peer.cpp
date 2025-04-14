@@ -16,6 +16,9 @@
 #include <chrono>
 #include <condition_variable>
 
+#include <fstream>
+#include <sstream>
+
 #include "Peer.h"
 
 // I need to add first the ipaddress of the user (sockaddr_in) and initialize it in startPeer funtion;
@@ -74,41 +77,6 @@ void Peer::sendPacket(const CustomPacket &packet) {
     } else {
       std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
     }
-  }
-}
-
-// -----------------------------------------------------------------------------------------------------
-
-void Peer::sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &dest_addr) {
-  uint8_t buffer[sizeof(struct iphdr) + sizeof(CustomPacket)];
-
-  // Construct the IP header
-  struct iphdr *ip_header = (struct iphdr *)buffer;
-  ip_header->version = 4; // IPv4
-  ip_header->ihl = 5; // Header length (5 * 4 = 20 bytes)
-  ip_header->tos = 0; // Type of service
-  ip_header->tot_len = htons(sizeof(buffer)); // Total length (header + payload)
-  ip_header->id = htons(packet.packet_id); // Identification
-  ip_header->frag_off = 0; // No fragmentation
-  ip_header->ttl = 64; // Time to live
-  ip_header->protocol = IPPROTO_RAW; // Protocol (raw socket)
-  ip_header->check = 0; // Checksum (set to 0 for now, kernel may calculate it)
-  ip_header->saddr = inet_addr("127.0.0.1"); // Source IP address
-  ip_header->daddr = dest_addr.sin_addr.s_addr; // Destination IP address
-
-  // Copy the payload (CustomPacket) into the buffer after the IP header
-  packet.serialize(buffer + sizeof(struct iphdr));
-
-  // Send the packet to the specified address
-  ssize_t bytes_sent = sendto(sock, buffer, sizeof(buffer), 0,
-                              (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-
-  if (bytes_sent < 0) {
-    perror("Error sending packet");
-  } else {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "Packet with ID " << packet.packet_id << " sent successfully to "
-              << inet_ntoa(dest_addr.sin_addr) << ":" << ntohs(dest_addr.sin_port) << "\n";
   }
 }
 
@@ -277,6 +245,7 @@ void Peer::listenForPackets() {
 
 
       //if it is already connected, but it still tries to connect to it (from some reason)
+      // TODO: we need to send 1 more packet in this sequence to be sore that we bouth end it.
       if (packet.get_urgent_flag() && packet.get_start_transmition_flag()) {
         std::lock_guard<std::mutex> lock (cout_mutex);
         std::cout<<"Receaved again a start transmition!\n\tIgnorring...\n";
@@ -309,12 +278,32 @@ void Peer::listenForPackets() {
 
       }
 
-      if (packet.get_error_flag()) {
-        {
+      //Responding to a missing packet from the serialise message
+      // TODO: Check if it works with text message and file!!!
+      if (packet.get_error_flag() && packet.get_serialize_flag()) {
+        if (packet.packet_id <= packet_id) {
+          {
+            std::lock_guard<std::mutex> lock (cout_mutex);
+            std::cout << "Received a packet that has info about packets that did not make it\n\t";
+          }
+
+          {
+            std::lock_guard<std::mutex> lock(packetsToBeSend_mutex);
+            auto it = packetsToBeSend.find(packet.packet_id);
+
+            if (it != packetsToBeSend.end()){
+              sendPacket(it->second);
+            }else {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout<<"The packet that did not make it is not in the history anymore\n";
+            }
+          }
+        }else {
           std::lock_guard<std::mutex> lock (cout_mutex);
-          std::cout << "Received a packet that has info about packets that did not make it";
+          std::cout << "Received an error packet with id to big!! IGNORING!\n";
         }
 
+        continue;
       }
 
       {
@@ -373,7 +362,7 @@ void Peer::processPackets() {
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout << "Processing Packet ID: " << packet.packet_id << "\n";
-      std::cout << "Payload: " << packet.payload << "\n";
+      // std::cout << "Payload: " << packet.payload << "\n";
     }
 
     if (!packet.get_serialize_flag()) {
@@ -484,6 +473,10 @@ void Peer::processPackets() {
           std::cout << "\tBIG MESSAGE:\n\t" << msg << "\n";
         }
 
+        //TODO: Reconstruct the binary flags
+        // Nush sigur; nu pare deloc eficient sa folosesc acelasi tip de packet pentru date binare:/
+
+
         msg.clear();
       }
     }
@@ -499,6 +492,8 @@ void Peer::sendMessage(const std::string &msg) {
 
   // I will add it to the new buffer to deal with the error packet if need be
   add_packets_to_history(packet_list);
+  
+  bool check = false;
 
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
@@ -508,10 +503,67 @@ void Peer::sendMessage(const std::string &msg) {
       std::cout << "Payload to be send: " << packet.payload << "\n";
 
     }
+
+    // if (!check) {
+    //   std::lock_guard<std::mutex> lock(cout_mutex);
+    //   std::cout << "Skiping once\n";
+    //   check = true;
+    // }else {
+    // }
     sendPacket(packet);
   }
 }
 
+//-------------------------------------------------------------------------------------------------------
+//TODO: Need to implement the receiver code for this
+void Peer::sendFile(const std::string &file_path) {
+  std::ifstream file(file_path, std::ios::binary);
+
+  if (!file.is_open()) {
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cerr << "Error: Could not open file: " << file_path << "\n";
+    }
+    return;
+  }
+
+  // Read the file content into a string
+  std::ostringstream oss;
+  oss << file.rdbuf();
+  std::string file_content = oss.str();
+
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "File read successfully. Size: " << file_content.size() << " bytes\n";
+  }
+
+  // Fragment the file content into packets
+  uint16_t file_packet_id = packet_id; // Start with the current packet ID
+  std::map<uint16_t, CustomPacket> file_packets =
+      CustomPacket::fragmentMessage(file_content, file_packet_id, true);
+
+  // Add packets to the history for retransmission if needed
+  add_packets_to_history(file_packets);
+
+  // Send each packet
+  for (const auto &pair : file_packets) {
+    const CustomPacket &packet = pair.second;
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Sending Packet ID: " << packet.packet_id << "\n";
+      std::cout << "Payload to be sent: " << std::string(packet.payload, packet.length) << "\n";
+    }
+    sendPacket(packet);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "File sent successfully.\n";
+  }
+}
+
+
+//STARTING AND ENDING CONNECTION
 //-------------------------------------------------------------------------------------------------------
 void Peer::connectToPeer(const char *remote_ip) {
   {
@@ -574,20 +626,6 @@ void Peer::connectToPeer(const char *remote_ip) {
     std::cout << "Connection established with remote peer at " << remote_ip << ".\n";
   }
   this->is_connected = true;
-}
-
-//-------------------------------------------------------------------------------------------------------
-void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_received) {
-
-  std::lock_guard<std::mutex> lock(packet_id_mutex);
-
-  if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
-    packet_id = packet_id_received;
-    CustomPacket::incrementPacketId(packet_id);
-  } else {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
-  }
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -657,9 +695,13 @@ void Peer::endConnection() {
   }
 
   // For checking functionality and contents (debug)
-  for (const auto &[key, val] : packetsToBeSend) {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << key << "; " << std::string(val.payload, val.length) << "\n";
+  {
+    std::lock_guard<std::mutex> lock(packetsToBeSend_mutex);
+
+    for (const auto &[key, val] : packetsToBeSend) {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << key << "; " << std::string(val.payload, val.length) << "\n";
+    }
   }
 
 }
@@ -690,6 +732,7 @@ CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const 
   
   error_packet.packet_id = missing_packet_id;
   error_packet.set_error_flag();
+  error_packet.set_serialize_flag();
   std::string msg= "error";
   memcpy(error_packet.payload, msg.data(), msg.size());
   error_packet.length = msg.size();
@@ -698,14 +741,34 @@ CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const 
   return error_packet;
 
 }
+
 //-------------------------------------------------------------------------------------------------------
 void Peer::add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list){
   for (const auto &pair : packet_list) {
-    while (packetsToBeSend.size() > size_of_packetsToBeSend) {
-      auto oldest = packetsToBeSend.begin();
-      packetsToBeSend.erase(oldest);
+    {
+      std::lock_guard<std::mutex> lock(packetsToBeSend_mutex);
+
+      while (packetsToBeSend.size() > size_of_packetsToBeSend) {
+        auto oldest = packetsToBeSend.begin();
+        packetsToBeSend.erase(oldest);
+      }
+
+      packetsToBeSend[pair.first] = pair.second;
     }
 
-    packetsToBeSend[pair.first] = pair.second;
+  }
+}
+
+//-------------------------------------------------------------------------------------------------------
+void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_received) {
+
+  std::lock_guard<std::mutex> lock(packet_id_mutex);
+
+  if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
+    packet_id = packet_id_received;
+    CustomPacket::incrementPacketId(packet_id);
+  } else {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
   }
 }

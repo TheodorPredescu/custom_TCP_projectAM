@@ -27,7 +27,7 @@ struct CustomPacket {
   uint16_t checksum;
 
   static std::map<u_int16_t, CustomPacket>
-  fragmentMessage(const std::string &message, u_int16_t &packet_id);
+  fragmentMessage(const std::string &message, u_int16_t &packet_id, const bool &is_file = false);
   static std::string
   composedMessage(std::map<uint16_t, CustomPacket> &map_packets);
   static void incrementPacketId(uint16_t &packet_id);

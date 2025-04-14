@@ -17,7 +17,7 @@ public:
 
     void sendMessage(const std::string &msg);
 
-    void sendFile();
+    void sendFile(const std::string &file_path);
     void listenForPackets();
     void processPackets();
     void endConnection();
@@ -36,6 +36,7 @@ private:
 
     std::mutex packet_mutex;
     std::mutex packet_id_mutex;
+    std::mutex packetsToBeSend_mutex;
     
     std::vector<CustomPacket> packet_vector;
     std::condition_variable packet_cv;

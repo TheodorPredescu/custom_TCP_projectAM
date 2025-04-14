@@ -91,7 +91,7 @@ bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
 // It does add checksumm so that all is done here
 std::map<u_int16_t, CustomPacket>
 CustomPacket::fragmentMessage(const std::string &message,
-                              u_int16_t &packet_id) {
+                              u_int16_t &packet_id, const bool &is_file) {
 
   std::map<u_int16_t, CustomPacket> packets;
   size_t maxPayloadSize = 256;
@@ -110,6 +110,8 @@ CustomPacket::fragmentMessage(const std::string &message,
 
     start_packet.set_start_transmition_flag();
     start_packet.set_serialize_flag();
+
+    if (is_file == true) start_packet.setMsgType(1);
 
     std::string length_ser = std::to_string(number_of_packages_to_be_sended);
     memcpy(start_packet.payload, length_ser.data(), length_ser.length());
@@ -146,11 +148,7 @@ CustomPacket::fragmentMessage(const std::string &message,
       // packet.length += 1;
     }
 
-    // packet_id += 1;
-    // if (packet_id >= UINT16_MAX) {
-    //   std::cerr << "Warning: Packet ID overflow. Resetting...\n";
-    //   packet_id = 0;
-    // }
+    if (is_file == true) packet.setMsgType(1);
 
     CustomPacket::incrementPacketId(packet_id);
     packet.packet_id = packet_id;
@@ -216,19 +214,20 @@ std::string CustomPacket::composedMessage(
             << ", Has End Packet: " << std::boolalpha << hasEndPacket
             << ", hasEndPacket: " << hasEndPacket << std::endl;
 
-  // Ensure we received all expected packets; care that if we have a short message
-  // we will not have a start, end and serialise flag, and only the packetid
-  if (expectedPacketCount == -1 || receivedPacketCount != expectedPacketCount ||
-      !hasEndPacket) {
-    std::cerr << "Error: Missing packets or end flag not received.\n";
-    // throw MissingPacketsException(not_received_packages, expectedPacketCount == -1);
-  }
-
   if (expectedPacketCount == -1) {
     std::cerr << "Error: No starting packet\n\t"
           "It is needed a starting packet to know the dimention of the message!!!\n"
           "\tSending request for a new starting packet.\n\n";
     throw MissingPacketsException(not_received_packages, true);
+  }
+
+  // Ensure we received all expected packets; care that if we have a short message
+  // we will not have a start, end and serialise flag, and only the packetid
+
+  //deleted:expectedPacketCount == -1 ||  
+  if (receivedPacketCount != expectedPacketCount || !hasEndPacket) {
+    std::cerr << "Error: Missing packets or end flag not received.\n";
+    // throw MissingPacketsException(not_received_packages, expectedPacketCount == -1);
   }
 
   // Now, reconstruct the message
@@ -246,7 +245,9 @@ std::string CustomPacket::composedMessage(
       }
     }
 
-    // TODO: Recheck for infinite loop; Carefull for later
+    // We compare the id from received packets with the cnt we are keeping to check for missing packets;
+    // for every new packet from the map we increment the i until it has the same value, 
+    // spotting missing packets
     while (i != pair.first) {
       not_received_packages.push_back(i);
       CustomPacket::incrementPacketId(i);
