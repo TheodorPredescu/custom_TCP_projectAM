@@ -7,7 +7,7 @@
 #include <iostream>
 #include <map>
 #include <vector>
-#include <string>
+#include <stringi>
 #include <sys/types.h>
 #include <bitset>
 
