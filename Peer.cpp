@@ -179,6 +179,7 @@ void Peer::listenForPackets() {
     }
 
     if (packet.length == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
 
@@ -356,14 +357,18 @@ void Peer::processPackets() {
     }
 
     if (!packet.get_serialize_flag()) {
+
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Single packet.\n";
+    }
+
       std::string msg = std::string(packet.payload, packet.length);
       msg_log.emplace(packet.packet_id, msg);
 
       //For showing in interface
-      {
-        std::lock_guard<std::mutex> lock(adding_msg_received);
-        adding_messages_in_received_messages(msg);
-      }
+      adding_messages_in_received_messages(msg);
+      
 
       // If i receive a packet that its not in the interval precizated
       if (start != UINT16_MAX && end != UINT16_MAX && 
@@ -471,10 +476,7 @@ void Peer::processPackets() {
         }
 
         //For showing it in interface
-        {
-          std::lock_guard<std::mutex> lock(adding_msg_received);
-          adding_messages_in_received_messages(msg);
-        }
+        adding_messages_in_received_messages(msg);
 
         //TODO: Reconstruct the binary flags
         // Nush sigur; nu pare deloc eficient sa folosesc acelasi tip de packet pentru date binare:/
@@ -779,30 +781,182 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
 //-------------------------------------------------------------------------------------------------------
 void Peer::adding_messages_in_received_messages(const std::string &msg) {
 
-  std::lock_guard<std::mutex> lock(adding_msg_received);
-  messages_received.push_back(msg);
+  {
+    std::lock_guard<std::mutex> lock(adding_msg_received);
+    messages_received.push_back(msg);
+
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout<<"Message added: " << msg <<  std::endl;
+    }
+  }
+
+
+  messages_received_cv.notify_one();
 
 }
 //-------------------------------------------------------------------------------------------------------
-extern "C" {
-    const char* get_messages_received() {
-        static Peer peer_instance; // Create a static instance of Peer
-        std::string message = peer_instance.get_messages_received();
-        return message.c_str(); // Return the message as a C-style string
-    }
-}
 
 std::string Peer::get_messages_received() {
-  while (true) {
 
+  std::string msg;
+  {
+    std::unique_lock<std::mutex> lock(adding_msg_received);
+    messages_received_cv.wait(lock, [this] {return !messages_received.empty();});
+
+    msg = *messages_received.begin();
+    messages_received.erase(messages_received.begin());
+  }
+  return msg;
+
+}
+
+//-------------------------------------------------------------------------------------------------------
+void Peer::runTerminalInterface() {
     {
-      std::unique_lock<std::mutex> lock(adding_msg_received);
-      messages_received_cv.wait(lock, [this] {return !messages_received.empty();});
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Welcome to the Peer CLI!\n";
+        std::cout << "Choose mode:\n";
+        std::cout << "1. Server\n";
+        std::cout << "2. Client\n";
     }
 
-    std::string msg = *messages_received.begin();
-    messages_received.erase(messages_received.begin());
-    return msg;
+    int mode;
+    std::cin >> mode;
 
-  }
+    if (mode == 1) {
+        // Server mode
+        int port;
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Enter the port to listen on: ";
+        }
+        std::cin >> port;
+
+        startPeer(port);
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Server started on port " << port << ". Waiting for messages...\n";
+        }
+
+    } else if (mode == 2) {
+        // Client mode
+        std::string remote_ip;
+        int port;
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Enter the server IP: ";
+        }
+        std::cin >> remote_ip;
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Enter the server port: ";
+        }
+        std::cin >> port;
+
+        startPeer(port, remote_ip.c_str());
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
+        }
+    } else {
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cerr << "Invalid mode selected. Exiting...\n";
+        }
+        return;
+    }
+
+    // Start a thread to listen for incoming packets
+    std::thread listener_thread([this]() {
+        listenForPackets();
+    });
+
+    // Start a thread to print received messages
+    std::thread message_printer_thread([this]() {
+        while (true) {
+            std::string received_message = get_messages_received();
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout << "\n[Received Message]: " << received_message << "\n";
+
+                // Reprint the informational text
+                std::cout << "\nCommands:\n";
+                std::cout << "1. Send message\n";
+                std::cout << "2. Send file\n";
+                std::cout << "3. Exit\n";
+                std::cout << "Enter your choice: ";
+            }
+        }
+    });
+
+    // Main loop for user commands
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "\nCommands:\n";
+            std::cout << "1. Send message\n";
+            std::cout << "2. Send file\n";
+            std::cout << "3. Exit\n";
+            std::cout << "Enter your choice: ";
+        }
+
+        int choice;
+        std::cin >> choice;
+
+        // Validate input
+        if (std::cin.fail()) {
+            std::cin.clear(); // Clear the error flag
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Discard invalid input
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cerr << "Invalid choice. Please try again.\n";
+            }
+            continue;
+        }
+
+        if (choice == 1) {
+            // Send a message
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+            std::string message;
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout << "Enter your message: ";
+            }
+            std::getline(std::cin, message);
+            sendMessage(message);
+        } else if (choice == 2) {
+            // Send a file
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+            std::string file_path;
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout << "Enter the file path: ";
+            }
+            std::getline(std::cin, file_path);
+            sendFile(file_path);
+        } else if (choice == 3) {
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout << "Exiting...\n";
+            }
+            endConnection();
+            break;
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cerr << "Invalid choice. Please try again.\n";
+            }
+        }
+    }
+
+    // Wait for the listener thread to finish
+    if (listener_thread.joinable()) {
+        listener_thread.join();
+    }
+
+    // Wait for the message printer thread to finish
+    if (message_printer_thread.joinable()) {
+        message_printer_thread.detach(); // Detach the thread to allow it to exit independently
+    }
 }

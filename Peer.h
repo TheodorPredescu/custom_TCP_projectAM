@@ -21,6 +21,8 @@ public:
 
     std::string get_messages_received();
 
+    void runTerminalInterface();
+
 private:
     int sock;
     int serialise_packet_size = 0, procesed_packets = 0;
@@ -72,13 +74,3 @@ private:
 };
 
 #endif // PEER_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-const char* get_messages_received();
-
-#ifdef __cplusplus
-}
-#endif

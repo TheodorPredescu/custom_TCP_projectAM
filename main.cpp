@@ -254,8 +254,8 @@ void test_peer_class() {
 
 int main() {
   // Test flag manipulation
-  CustomPacket packet;
-  packet.packet_id = 1;
+  // CustomPacket packet;
+  // packet.packet_id = 1;
   // print_and_verify_bits0_5(packet);
 
   // Test packet serialization and deserialization
@@ -266,7 +266,10 @@ int main() {
   // test_fragment_and_compose_message();
 
 
-  test_peer_class();
+  // test_peer_class();
+
+  Peer peer;
+  peer.runTerminalInterface();
 
   return 0;
 }
