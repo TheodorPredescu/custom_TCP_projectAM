@@ -8,9 +8,6 @@
 #include <netinet/in.h>
 #include <string>
 
-// Declare cout_mutex as extern
-extern std::mutex cout_mutex;
-
 class Peer {
 public:
     void startPeer(int port, const char *remote_ip = nullptr);
@@ -21,6 +18,8 @@ public:
     void listenForPackets();
     void processPackets();
     void endConnection();
+
+    std::string get_messages_received();
 
 private:
     int sock;
@@ -34,12 +33,21 @@ private:
     std::map<uint16_t, CustomPacket> packetsToBeSend;
     int size_of_packetsToBeSend = 1000;
 
+    //For seeing messages
+    std::vector<std::string> messages_received;
+
     std::mutex packet_mutex;
     std::mutex packet_id_mutex;
     std::mutex packetsToBeSend_mutex;
+    std::mutex adding_msg_received;
+
+    // Declare cout_mutex as extern
+    std::mutex cout_mutex;
+
     
     std::vector<CustomPacket> packet_vector;
     std::condition_variable packet_cv;
+    std::condition_variable messages_received_cv;
 
     sockaddr_in peer_addr, client_addr;
 
@@ -58,6 +66,19 @@ private:
 
     //For memoring the packets that will be send
     void add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list);
+
+    //For adding complete messages in vector
+    void adding_messages_in_received_messages(const std::string &msg);
 };
 
 #endif // PEER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+const char* get_messages_received();
+
+#ifdef __cplusplus
+}
+#endif

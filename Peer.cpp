@@ -27,16 +27,6 @@
 void Peer::sendPacket(const CustomPacket &packet) { 
   {
 
-  //   std::lock_guard<std::mutex> lock(cout_mutex);
-  // // Debug: Print packet details
-  // std::cout << "Sending Packet ID: " << packet.packet_id << "\n";
-  // std::cout << "Flags: " << static_cast<int>(packet.flags) << "\n";
-  // std::cout << "Length: " << packet.length << "\n";
-  // std::cout << "Payload: " << packet.payload << "\n";
-  // std::cout << "Checksum: " << packet.checksum << "\n";
-  // packet.printFlags();
-
-
   // Debug: Print the destination address
   char dest_ip[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(client_addr.sin_addr), dest_ip, INET_ADDRSTRLEN);
@@ -366,7 +356,14 @@ void Peer::processPackets() {
     }
 
     if (!packet.get_serialize_flag()) {
-      msg_log.emplace(packet.packet_id, std::string(packet.payload, packet.length));
+      std::string msg = std::string(packet.payload, packet.length);
+      msg_log.emplace(packet.packet_id, msg);
+
+      //For showing in interface
+      {
+        std::lock_guard<std::mutex> lock(adding_msg_received);
+        adding_messages_in_received_messages(msg);
+      }
 
       // If i receive a packet that its not in the interval precizated
       if (start != UINT16_MAX && end != UINT16_MAX && 
@@ -471,6 +468,12 @@ void Peer::processPackets() {
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
           std::cout << "\tBIG MESSAGE:\n\t" << msg << "\n";
+        }
+
+        //For showing it in interface
+        {
+          std::lock_guard<std::mutex> lock(adding_msg_received);
+          adding_messages_in_received_messages(msg);
         }
 
         //TODO: Reconstruct the binary flags
@@ -770,5 +773,36 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
   } else {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
+  }
+}
+
+//-------------------------------------------------------------------------------------------------------
+void Peer::adding_messages_in_received_messages(const std::string &msg) {
+
+  std::lock_guard<std::mutex> lock(adding_msg_received);
+  messages_received.push_back(msg);
+
+}
+//-------------------------------------------------------------------------------------------------------
+extern "C" {
+    const char* get_messages_received() {
+        static Peer peer_instance; // Create a static instance of Peer
+        std::string message = peer_instance.get_messages_received();
+        return message.c_str(); // Return the message as a C-style string
+    }
+}
+
+std::string Peer::get_messages_received() {
+  while (true) {
+
+    {
+      std::unique_lock<std::mutex> lock(adding_msg_received);
+      messages_received_cv.wait(lock, [this] {return !messages_received.empty();});
+    }
+
+    std::string msg = *messages_received.begin();
+    messages_received.erase(messages_received.begin());
+    return msg;
+
   }
 }
