@@ -65,6 +65,7 @@ private:
     void incrementing_and_checking_packet_id(const uint16_t &idpacket);
     CustomPacket create_ack_packet();
     CustomPacket create_error_packet(const uint16_t &missing_packet_id) const;
+    CustomPacket create_start_packet(const int *size, const bool &isFile = false);
 
     //For memoring the packets that will be send
     void add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list);

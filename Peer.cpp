@@ -127,6 +127,8 @@ void Peer::startPeer(int port, const char *remote_ip) {
 
   receiver.detach();
   processor.detach();
+  // receiver.join();
+  // processor.join();
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -151,19 +153,19 @@ void Peer::receivePacket(CustomPacket &packet) {
     std::cout << "Error reading from socket.\n";
     return;
   }else {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout<< "I have received a packet!\n";
+    // std::lock_guard<std::mutex> lock(cout_mutex);
+    // std::cout<< "I have received a packet!\n";
   }
 
   packet = CustomPacket::deserialize(buffer + sizeof(struct iphdr));
 
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "Received Packet ID: " << packet.packet_id << "\n";
-    std::cout << "Payload: " << packet.payload << "\n";
-    std::cout << "Checksum: " << packet.checksum << "\n";
-    packet.printFlags();
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(cout_mutex);
+  //   std::cout << "Received Packet ID: " << packet.packet_id << "\n";
+  //   std::cout << "Payload: " << packet.payload << "\n";
+  //   std::cout << "Checksum: " << packet.checksum << "\n";
+  //   packet.printFlags();
+  // }
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -173,19 +175,34 @@ void Peer::listenForPackets() {
     CustomPacket packet;
     receivePacket(packet);
 
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "---Waiting to receive a packet.\n";
-    }
+    // {
+    //   std::lock_guard<std::mutex> lock(cout_mutex);
+    //   std::cout << "---Waiting to receive a packet.\n";
+    // }
 
     if (packet.length == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
+     // Validate the packet
+    if (packet.calculateChecksum() != packet.checksum) {
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cerr << "\n\n!!! Packet with ID " << packet.packet_id
+                  << " is corrupted !!!!\n\n\n";
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      continue;
+    }else {
+      // std::lock_guard<std::mutex> lock(cout_mutex);
+      // std::cout<<"Content: " << std::string(packet.payload, packet.length);
+      // packet.printFlags();
+    }
 
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Received a packet; isconnected: " << is_connected << std::endl;
+      std::cout << "Received a packet; isconnected: " << is_connected <<"\npacket size: " << 
+      packet.length<< std::endl;
     }
 
     // Sequence for responding to a connection request
@@ -202,14 +219,6 @@ void Peer::listenForPackets() {
 
         incrementing_and_checking_packet_id(packet.packet_id);
         sendPacket(create_ack_packet());
-
-        // // Send the acknowledgment packet using the stored client address
-        // if (client_addr_initialized) {
-        //   // sendPacket(ack_packet);
-        //   sendPacket(create_ack_packet());
-        // } else {
-        //   std::cerr << "Error: Client address not initialized. Cannot send acknowledgment.\n";
-        // }
 
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
@@ -319,6 +328,10 @@ void Peer::processPackets() {
   u_int16_t start = UINT16_MAX, end = UINT16_MAX;
   std::vector<uint16_t> missing_packets;
 
+  std::string file_name, file_extension;
+  size_t file_size = 0;
+  std::ostringstream file_content;
+  
   while (true) {
     CustomPacket packet;
 
@@ -332,22 +345,21 @@ void Peer::processPackets() {
         std::cout << "Processing a packet from the queue.\nSize: " << packet_vector.size() << std::endl;
       }
 
-
-
       // Get the next packet from the queue
       packet = *packet_vector.begin();
       packet_vector.erase(packet_vector.begin());
     }
 
-    // Validate the packet
-    if (packet.calculateChecksum() != packet.checksum) {
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cerr << "\n\n!!! Packet with ID " << packet.packet_id
-                  << " is corrupted !!!!\n\n\n";
-      }
-      continue;
-    }
+    // I will do this in listen for packets
+    // // Validate the packet
+    // if (packet.calculateChecksum() != packet.checksum) {
+    //   {
+    //     std::lock_guard<std::mutex> lock(cout_mutex);
+    //     std::cerr << "\n\n!!! Packet with ID " << packet.packet_id
+    //               << " is corrupted !!!!\n\n\n";
+    //   }
+    //   continue;
+    // }
 
     // Process the packet (e.g., add to a map, reconstruct a message, etc.)
     {
@@ -379,7 +391,8 @@ void Peer::processPackets() {
           std::cout << "Not all packets are received!\tSending the missing packets";
         }
 
-        // TODO: I need to add logic for dealing with this !!
+        // TODO: I need to add logic for dealing with this !! If the error message is lost, 
+        // the message will remain incomplete; it will not send it twice
         if (!missing_packets.empty()) {
           for (const auto &it : missing_packets) {
             sendPacket(create_error_packet(it));
@@ -395,95 +408,185 @@ void Peer::processPackets() {
       }
     }else {
 
+      // ------------serialise section--------------------------
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
         std::cout<< "Got to the serialize section.\n";
       }
 
-      // We will itinitate the serialise packet size if we didnt already
-      if (packet.get_start_transmition_flag() && serialise_packet_size == 0) {
-        serialise_packet_size = std::stoi(std::string(packet.payload, packet.length));
-        start = packet.packet_id;
-        {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout<< "\tFoud the start transmition packet. Number of packets in this train is: " << serialise_packet_size << std::endl;
-        }
+      //-----------------Text message-------------------
+      if (packet.getMsgType() == 0) {
 
-        incrementing_and_checking_packet_id(start);
-
-        continue;
-      }else if (packet.get_start_transmition_flag()){
-        {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout<< "\n\nWe found a second start packet with start transmition !!! \n\n";
-        }
-
-        continue;
-
-      }
-
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout<< "We are adding the packet "<< packet.packet_id <<" in the big message!\n";
-      }
-
-      //The first packet (the one with the start) has in payload the number of packets from that 
-      if (long_message.find(packet.packet_id) == long_message.end() && serialise_packet_size != 0) {
-        long_message.emplace(packet.packet_id, std::string(packet.payload, packet.length));
-        procesed_packets++; 
-      }else {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout<< "\n\n\tWe have a duplicate\n\n\n";
-      }
-
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout<< "\n\nsize_long_msg: " << serialise_packet_size << " ; packets processed: " <<procesed_packets << std::endl;
-      }
-
-      if (serialise_packet_size != 0 && serialise_packet_size == procesed_packets) {
-        for (int i = 1; i <serialise_packet_size + 1; ++i) {
-          uint16_t current_packet_id = start + i;
-
-          auto it = long_message.find(current_packet_id);
-          if (it != long_message.end()) {
-            msg += it->second;
-          }else {
-            {
-              std::lock_guard<std::mutex> lock(cout_mutex);
-              std::cout<< "Missing packet: " << current_packet_id << std::endl;
-            }
-            missing_packets.push_back(current_packet_id);
-          }
-        }
-
-        if (!missing_packets.empty()) {
+        // We will itinitate the serialise packet size if we didnt already
+        if (packet.get_start_transmition_flag() && serialise_packet_size == 0) {
+          serialise_packet_size = std::stoi(std::string(packet.payload, packet.length));
+          start = packet.packet_id;
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout<< "There are missing packets!\n";
+            std::cout<< "\tFoud the start transmition packet. Number of packets in this train is: " << serialise_packet_size << std::endl;
           }
-          throw missing_packets;
-        }
 
-        long_message.clear();
-        start = UINT16_MAX;
-        serialise_packet_size = 0;
-        procesed_packets = 0;
+          incrementing_and_checking_packet_id(start);
+
+          continue;
+        }else if (packet.get_start_transmition_flag()){
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout<< "\n\nWe found a second start packet with start transmition !!! \n\n";
+          }
+
+          continue;
+
+        }
 
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "\tBIG MESSAGE:\n\t" << msg << "\n";
+          std::cout<< "We are adding the packet "<< packet.packet_id <<" in the big message!\n";
         }
 
-        //For showing it in interface
-        adding_messages_in_received_messages(msg);
+        //The first packet (the one with the start) has in payload the number of packets from that 
+        if (long_message.find(packet.packet_id) == long_message.end() && serialise_packet_size != 0) {
+          long_message.emplace(packet.packet_id, std::string(packet.payload, packet.length));
+          procesed_packets++; 
+        }else {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<< "\n\n\tWe have a duplicate\n\n\n";
+        }
 
-        //TODO: Reconstruct the binary flags
-        // Nush sigur; nu pare deloc eficient sa folosesc acelasi tip de packet pentru date binare:/
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<< "\n\nsize_long_msg: " << serialise_packet_size << " ; packets processed: " <<procesed_packets << std::endl;
+        }
+
+        if (serialise_packet_size != 0 && serialise_packet_size == procesed_packets) {
+          for (int i = 1; i <serialise_packet_size + 1; ++i) {
+            uint16_t current_packet_id = start + i;
+
+            auto it = long_message.find(current_packet_id);
+            if (it != long_message.end()) {
+              msg += it->second;
+            }else {
+              {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout<< "Missing packet: " << current_packet_id << std::endl;
+              }
+              missing_packets.push_back(current_packet_id);
+            }
+          }
+
+          if (!missing_packets.empty()) {
+            {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout<< "There are missing packets!\n";
+            }
+            throw missing_packets;
+          }
+
+          long_message.clear();
+          start = UINT16_MAX;
+          serialise_packet_size = 0;
+          procesed_packets = 0;
+
+          if (packet.getMsgType() == 1){
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "\tBIG MESSAGE:\n\t" << msg << "\n";
+          }else {
+
+          }
+
+          //For showing it in interface
+          adding_messages_in_received_messages(msg);
+
+          //TODO: Reconstruct the binary flags
+          // Nush sigur; nu pare deloc eficient sa folosesc acelasi tip de packet pentru date binare:/
 
 
-        msg.clear();
+          msg.clear();
+        }
+
+      } else {
+        // -----------FILE TYPE-------------------
+        //TODO: This is not CHECKED!!!
+
+        if (packet.get_start_transmition_flag() && serialise_packet_size == 0) {
+          serialise_packet_size = std::stoi(std::string(packet.payload, packet.length));
+          start = packet.packet_id;
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout<< "\tFoud the start transmition packet. Number of packets in this train is: " << serialise_packet_size << std::endl;
+          }
+
+          incrementing_and_checking_packet_id(start);
+
+          continue;
+        }else if (packet.get_start_transmition_flag()){
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout<< "\n\nWe found a second start packet with start transmition !!! \n\n";
+          }
+
+          continue;
+
+        }
+        // Process metadata packet; First packet after the size packet is the one with metadata
+        if (file_name.empty()) {
+            std::string metadata(packet.payload, packet.length);
+            size_t pos1 = metadata.find('|');
+            size_t pos2 = metadata.find('|', pos1 + 1);
+
+            file_name = metadata.substr(0, pos1);
+            file_extension = metadata.substr(pos1 + 1, pos2 - pos1 - 1);
+            file_size = std::stoul(metadata.substr(pos2 + 1));
+
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout << "Received metadata: File Name: " << file_name
+                          << ", File Extension: " << file_extension
+                          << ", File Size: " << file_size << " bytes\n";
+            }
+
+            long_message[packet.packet_id] = metadata;
+
+            continue;
+        }
+
+        // We add all the content message dirrecly in the long_message var
+        long_message[packet.packet_id] = std::string(packet.payload, packet.length);
+
+        // If the size is met, we create the file and add the content in it.
+        if (long_message.size() == file_size) {
+          for (const auto &pair : long_message) {
+              file_content << pair.second;
+          }
+
+          // Write the file to disk
+          std::ofstream output_file(file_name, std::ios::binary);
+          if (output_file.is_open()) {
+              output_file << file_content.str();
+              output_file.close();
+
+              {
+                  std::lock_guard<std::mutex> lock(cout_mutex);
+                  std::cout << "File reassembled and saved as: " << file_name << "\n";
+              }
+          } else {
+              {
+                  std::lock_guard<std::mutex> lock(cout_mutex);
+                  std::cerr << "Error: Could not create file: " << file_name << "\n";
+              }
+          }
+
+          // Clear the buffers
+          long_message.clear();
+          file_content.str("");
+          file_content.clear();
+          file_name.clear();
+          file_extension.clear();
+          file_size = 0;
+        }
+
       }
+
     }
 
     incrementing_and_checking_packet_id(packet.packet_id);
@@ -532,15 +635,39 @@ void Peer::sendFile(const std::string &file_path) {
     return;
   }
 
+  // Extract file name and type
+  std::string file_name = file_path.substr(file_path.find_last_of("/\\") + 1);
+  std::string file_extension = file_name.substr(file_name.find_last_of('.') + 1);
+
   // Read the file content into a string
   std::ostringstream oss;
   oss << file.rdbuf();
   std::string file_content = oss.str();
+  file.close();
 
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "File read successfully. Size: " << file_content.size() << " bytes\n";
   }
+
+  //TODO: need to add starting packet!!!!
+  // Create a metadata packet
+  std::string metadata = file_name + "|" + file_extension + "|" + std::to_string(file_content.size());
+  CustomPacket metadata_packet;
+  metadata_packet.packet_id = packet_id;
+  memcpy(metadata_packet.payload, metadata.data(), metadata.size());
+  metadata_packet.length = metadata.size();
+  metadata_packet.checksum = metadata_packet.calculateChecksum();
+
+  // Send the metadata packet
+  sendPacket(metadata_packet);
+  incrementing_and_checking_packet_id(packet_id);
+
+  {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Metadata packet sent: " << metadata << "\n";
+  }
+  //TODO: Metadata not added to the history
 
   // Fragment the file content into packets
   uint16_t file_packet_id = packet_id; // Start with the current packet ID
@@ -730,6 +857,23 @@ CustomPacket Peer::create_ack_packet() {
 
 }
 //-------------------------------------------------------------------------------------------------------
+CustomPacket Peer::create_start_packet(const int &size, const bool &isFile) {
+  CustomPacket packet;
+  packet.set_start_transmition_flag();
+  packet.set_serialize_flag();
+  isFile == 1 ? packet.setMsgType(1) : packet.setMsgType(0);
+
+  std::string string_size = std::to_string(size);
+  memcpy(packet.payload, string_size.data(), string_size.length());
+  packet.payload[string_size.length()] = '\n';
+  packet.length = string_size.length() + 1;
+  packet.packet_id = this.packet_id;
+  packet.checksum = packet.calculateChecksum();
+  CustomPacket::incrementing_and_checking_packet_id(packet.packet_id);
+
+}
+
+//-------------------------------------------------------------------------------------------------------
 CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const {
 
   // Create the acknowledgment packet
@@ -813,150 +957,150 @@ std::string Peer::get_messages_received() {
 
 //-------------------------------------------------------------------------------------------------------
 void Peer::runTerminalInterface() {
-    {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Welcome to the Peer CLI!\n";
-        std::cout << "Choose mode:\n";
-        std::cout << "1. Server\n";
-        std::cout << "2. Client\n";
-    }
+  {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Welcome to the Peer CLI!\n";
+      std::cout << "Choose mode:\n";
+      std::cout << "1. Server\n";
+      std::cout << "2. Client\n";
+  }
 
-    int mode;
-    std::cin >> mode;
+  int mode;
+  std::cin >> mode;
 
-    if (mode == 1) {
-        // Server mode
-        int port;
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "Enter the port to listen on: ";
-        }
-        std::cin >> port;
+  if (mode == 1) {
+      // Server mode
+      int port;
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Enter the port to listen on: ";
+      }
+      std::cin >> port;
 
-        startPeer(port);
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "Server started on port " << port << ". Waiting for messages...\n";
-        }
+      startPeer(port);
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Server started on port " << port << ". Waiting for messages...\n";
+      }
 
-    } else if (mode == 2) {
-        // Client mode
-        std::string remote_ip;
-        int port;
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "Enter the server IP: ";
-        }
-        std::cin >> remote_ip;
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "Enter the server port: ";
-        }
-        std::cin >> port;
+  } else if (mode == 2) {
+      // Client mode
+      std::string remote_ip;
+      int port;
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Enter the server IP: ";
+      }
+      std::cin >> remote_ip;
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Enter the server port: ";
+      }
+      std::cin >> port;
 
-        startPeer(port, remote_ip.c_str());
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
-        }
-    } else {
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cerr << "Invalid mode selected. Exiting...\n";
-        }
-        return;
-    }
+      startPeer(port, remote_ip.c_str());
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
+      }
+  } else {
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cerr << "Invalid mode selected. Exiting...\n";
+      }
+      return;
+  }
 
-    // Start a thread to listen for incoming packets
-    std::thread listener_thread([this]() {
-        listenForPackets();
-    });
+  // Start a thread to listen for incoming packets
+  std::thread listener_thread([this]() {
+      listenForPackets();
+  });
 
-    // Start a thread to print received messages
-    std::thread message_printer_thread([this]() {
-        while (true) {
-            std::string received_message = get_messages_received();
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "\n[Received Message]: " << received_message << "\n";
+  // Start a thread to print received messages
+  std::thread message_printer_thread([this]() {
+      while (true) {
+          std::string received_message = get_messages_received();
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "\n[Received Message]: " << received_message << "\n";
 
-                // Reprint the informational text
-                std::cout << "\nCommands:\n";
-                std::cout << "1. Send message\n";
-                std::cout << "2. Send file\n";
-                std::cout << "3. Exit\n";
-                std::cout << "Enter your choice: ";
-            }
-        }
-    });
+              // Reprint the informational text
+              std::cout << "\nCommands:\n";
+              std::cout << "1. Send message\n";
+              std::cout << "2. Send file\n";
+              std::cout << "3. Exit\n";
+              std::cout << "Enter your choice: ";
+          }
+      }
+  });
 
-    // Main loop for user commands
-    while (true) {
-        {
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "\nCommands:\n";
-            std::cout << "1. Send message\n";
-            std::cout << "2. Send file\n";
-            std::cout << "3. Exit\n";
-            std::cout << "Enter your choice: ";
-        }
+  // Main loop for user commands
+  while (true) {
+      {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "\nCommands:\n";
+          std::cout << "1. Send message\n";
+          std::cout << "2. Send file\n";
+          std::cout << "3. Exit\n";
+          std::cout << "Enter your choice: ";
+      }
 
-        int choice;
-        std::cin >> choice;
+      int choice;
+      std::cin >> choice;
 
-        // Validate input
-        if (std::cin.fail()) {
-            std::cin.clear(); // Clear the error flag
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Discard invalid input
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cerr << "Invalid choice. Please try again.\n";
-            }
-            continue;
-        }
+      // Validate input
+      if (std::cin.fail()) {
+          std::cin.clear(); // Clear the error flag
+          std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Discard invalid input
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cerr << "Invalid choice. Please try again.\n";
+          }
+          continue;
+      }
 
-        if (choice == 1) {
-            // Send a message
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
-            std::string message;
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "Enter your message: ";
-            }
-            std::getline(std::cin, message);
-            sendMessage(message);
-        } else if (choice == 2) {
-            // Send a file
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
-            std::string file_path;
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "Enter the file path: ";
-            }
-            std::getline(std::cin, file_path);
-            sendFile(file_path);
-        } else if (choice == 3) {
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "Exiting...\n";
-            }
-            endConnection();
-            break;
-        } else {
-            {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cerr << "Invalid choice. Please try again.\n";
-            }
-        }
-    }
+      if (choice == 1) {
+          // Send a message
+          std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+          std::string message;
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "Enter your message: ";
+          }
+          std::getline(std::cin, message);
+          sendMessage(message);
+      } else if (choice == 2) {
+          // Send a file
+          std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+          std::string file_path;
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "Enter the file path: ";
+          }
+          std::getline(std::cin, file_path);
+          sendFile(file_path);
+      } else if (choice == 3) {
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "Exiting...\n";
+          }
+          endConnection();
+          break;
+      } else {
+          {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cerr << "Invalid choice. Please try again.\n";
+          }
+      }
+  }
 
-    // Wait for the listener thread to finish
-    if (listener_thread.joinable()) {
-        listener_thread.join();
-    }
+  // Wait for the listener thread to finish
+  if (listener_thread.joinable()) {
+      listener_thread.join();
+  }
 
-    // Wait for the message printer thread to finish
-    if (message_printer_thread.joinable()) {
-        message_printer_thread.detach(); // Detach the thread to allow it to exit independently
-    }
+  // Wait for the message printer thread to finish
+  if (message_printer_thread.joinable()) {
+      message_printer_thread.detach(); // Detach the thread to allow it to exit independently
+  }
 }
