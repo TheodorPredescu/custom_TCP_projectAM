@@ -18,6 +18,9 @@
 
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>  // For mkdir
+#include <sys/types.h> // For mkdir
+#include <filesystem>  // For checking if the folder exists (C++17)
 
 #include "Peer.h"
 
@@ -240,8 +243,13 @@ void Peer::listenForPackets() {
 
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Is connected branch\n";
+          std::cout << "\nIs connected branch\n";
+          std::cout<< "Processing packet: " << packet.packet_id<< std::endl;
+          packet.printFlags();
+          std::cout<<std::endl;
         }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
 
 
       //if it is already connected, but it still tries to connect to it (from some reason)
@@ -369,6 +377,7 @@ void Peer::processPackets() {
     }
 
     if (!packet.get_serialize_flag()) {
+      //-------------nonserialize-----------------
 
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
@@ -395,7 +404,7 @@ void Peer::processPackets() {
         // the message will remain incomplete; it will not send it twice
         if (!missing_packets.empty()) {
           for (const auto &it : missing_packets) {
-            sendPacket(create_error_packet(it));
+            // sendPacket(create_error_packet(it));
             {
               std::lock_guard<std::mutex> lock(cout_mutex);
               std::cout << "Sending request for resend for: " << static_cast<int>(it);
@@ -539,28 +548,54 @@ void Peer::processPackets() {
             file_size = std::stoul(metadata.substr(pos2 + 1));
 
             {
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "Received metadata: File Name: " << file_name
-                          << ", File Extension: " << file_extension
-                          << ", File Size: " << file_size << " bytes\n";
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout << "Received metadata: File Name: " << file_name
+                        << ", File Extension: " << file_extension
+                        << ", File Size: " << file_size << " bytes\n";
             }
 
             long_message[packet.packet_id] = metadata;
+            procesed_packets++;
 
             continue;
         }
 
         // We add all the content message dirrecly in the long_message var
         long_message[packet.packet_id] = std::string(packet.payload, packet.length);
+        procesed_packets++;
+
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<<"Added content in the file\n";
+          std::cout<<"\tprocessed packets : " << procesed_packets 
+              << "\n\tserialize_packet_size: " << serialise_packet_size<<std::endl;
+        }
 
         // If the size is met, we create the file and add the content in it.
-        if (long_message.size() == file_size) {
+        if (procesed_packets == serialise_packet_size) {
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<<"all files received\n";
+        }
+
+          bool metadata_check = true;
           for (const auto &pair : long_message) {
-              file_content << pair.second;
+            if (metadata_check) {
+              {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                std::cout<<"Ignorring metadata\n";
+              }
+              metadata_check = false;
+              continue;
+            }
+            file_content << pair.second;
           }
 
           // Write the file to disk
-          std::ofstream output_file(file_name, std::ios::binary);
+          ensureDataFolderExists();
+
+          std::string relative_path = folder_name + "/" + file_name;
+          std::ofstream output_file(relative_path, std::ios::binary);
           if (output_file.is_open()) {
               output_file << file_content.str();
               output_file.close();
@@ -583,6 +618,8 @@ void Peer::processPackets() {
           file_name.clear();
           file_extension.clear();
           file_size = 0;
+          serialise_packet_size = 0;
+          procesed_packets = 0;
         }
 
       }
@@ -625,72 +662,31 @@ void Peer::sendMessage(const std::string &msg) {
 //-------------------------------------------------------------------------------------------------------
 //TODO: Need to implement the receiver code for this
 void Peer::sendFile(const std::string &file_path) {
-  std::ifstream file(file_path, std::ios::binary);
+  std::map<uint16_t, CustomPacket> packet_list = CustomPacket::fragmentMessage(file_path, packet_id, true);
 
-  if (!file.is_open()) {
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cerr << "Error: Could not open file: " << file_path << "\n";
-    }
-    return;
-  }
+  // I will add it to the new buffer to deal with the error packet if need be
+  add_packets_to_history(packet_list);
+  
+  bool check = false;
 
-  // Extract file name and type
-  std::string file_name = file_path.substr(file_path.find_last_of("/\\") + 1);
-  std::string file_extension = file_name.substr(file_name.find_last_of('.') + 1);
-
-  // Read the file content into a string
-  std::ostringstream oss;
-  oss << file.rdbuf();
-  std::string file_content = oss.str();
-  file.close();
-
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "File read successfully. Size: " << file_content.size() << " bytes\n";
-  }
-
-  //TODO: need to add starting packet!!!!
-  // Create a metadata packet
-  std::string metadata = file_name + "|" + file_extension + "|" + std::to_string(file_content.size());
-  CustomPacket metadata_packet;
-  metadata_packet.packet_id = packet_id;
-  memcpy(metadata_packet.payload, metadata.data(), metadata.size());
-  metadata_packet.length = metadata.size();
-  metadata_packet.checksum = metadata_packet.calculateChecksum();
-
-  // Send the metadata packet
-  sendPacket(metadata_packet);
-  incrementing_and_checking_packet_id(packet_id);
-
-  {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Metadata packet sent: " << metadata << "\n";
-  }
-  //TODO: Metadata not added to the history
-
-  // Fragment the file content into packets
-  uint16_t file_packet_id = packet_id; // Start with the current packet ID
-  std::map<uint16_t, CustomPacket> file_packets =
-      CustomPacket::fragmentMessage(file_content, file_packet_id, true);
-
-  // Add packets to the history for retransmission if needed
-  add_packets_to_history(file_packets);
-
-  // Send each packet
-  for (const auto &pair : file_packets) {
+  for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Sending Packet ID: " << packet.packet_id << "\n";
-      std::cout << "Payload to be sent: " << std::string(packet.payload, packet.length) << "\n";
-    }
-    sendPacket(packet);
-  }
+      std::cout << "\n\nSending Packet ID: " << packet.packet_id << "\n";
+      std::cout << "Payload to be send: " << packet.payload << "\n";
+      packet.printFlags();
+      std::cout<<std::endl;
 
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "File sent successfully.\n";
+    }
+
+    // if (!check) {
+    //   std::lock_guard<std::mutex> lock(cout_mutex);
+    //   std::cout << "Skiping once\n";
+    //   check = true;
+    // }else {
+    // }
+    sendPacket(packet);
   }
 }
 
@@ -867,10 +863,11 @@ CustomPacket Peer::create_start_packet(const int &size, const bool &isFile) {
   memcpy(packet.payload, string_size.data(), string_size.length());
   packet.payload[string_size.length()] = '\n';
   packet.length = string_size.length() + 1;
-  packet.packet_id = this.packet_id;
+  packet.packet_id = this->packet_id;
   packet.checksum = packet.calculateChecksum();
-  CustomPacket::incrementing_and_checking_packet_id(packet.packet_id);
+  CustomPacket::incrementPacketId(packet.packet_id);
 
+  return packet;
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -888,7 +885,6 @@ CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const 
   error_packet.checksum = error_packet.calculateChecksum();
 
   return error_packet;
-
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -1103,4 +1099,23 @@ void Peer::runTerminalInterface() {
   if (message_printer_thread.joinable()) {
       message_printer_thread.detach(); // Detach the thread to allow it to exit independently
   }
+}
+
+//-------------------------------------------------------------------------------------------------------
+void Peer::ensureDataFolderExists() {
+
+    // Check if the folder exists
+    if (!std::filesystem::exists(folder_name)) {
+        // Create the folder
+        if (mkdir(folder_name.c_str(), 0777) == 0) {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Folder 'data' created successfully.\n";
+        } else {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Error: Could not create folder 'data'.\n";
+        }
+    }else {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout<<"Folder exists.\n";
+    }
 }

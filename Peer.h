@@ -35,6 +35,8 @@ private:
     std::map<uint16_t, CustomPacket> packetsToBeSend;
     int size_of_packetsToBeSend = 1000;
 
+    std::string folder_name = "data";
+
     //For seeing messages
     std::vector<std::string> messages_received;
 
@@ -65,13 +67,15 @@ private:
     void incrementing_and_checking_packet_id(const uint16_t &idpacket);
     CustomPacket create_ack_packet();
     CustomPacket create_error_packet(const uint16_t &missing_packet_id) const;
-    CustomPacket create_start_packet(const int *size, const bool &isFile = false);
+    CustomPacket create_start_packet(const int &size, const bool &isFile = false);
 
     //For memoring the packets that will be send
     void add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list);
 
     //For adding complete messages in vector
     void adding_messages_in_received_messages(const std::string &msg);
+
+    void ensureDataFolderExists();
 };
 
 #endif // PEER_H

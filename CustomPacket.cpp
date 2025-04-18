@@ -1,4 +1,3 @@
-// CustomPacket.cpp
 #include "CustomPacket.h"
 #include "MissingPacketsException.h"
 #include <algorithm>
@@ -10,6 +9,8 @@
 #include <string>
 #include <sys/types.h>
 #include <bitset>
+#include <fstream>
+#include <sstream>
 
 // Added function for increment because i was repeating myself
 void CustomPacket::incrementPacketId(uint16_t &packet_id) {
@@ -58,8 +59,8 @@ void CustomPacket::setMsgType(int msgType) {
 }
 
 // error flag (the one that will contain missing packets)
-void CustomPacket::set_error_flag() {flags |= 0x01 << 5;}
-bool CustomPacket::get_error_flag() const {return (flags & (0x01 << 5)) != 0;}
+void CustomPacket::set_error_flag() {flags |= 0x01 << 6;}
+bool CustomPacket::get_error_flag() const {return (flags & (0x01 << 6)) != 0;}
 
 // start transmition flag -> the 4th bit
 void CustomPacket::set_start_transmition_flag() { flags |= 0x10; }
@@ -95,23 +96,101 @@ CustomPacket::fragmentMessage(const std::string &message,
 
   std::map<u_int16_t, CustomPacket> packets;
   size_t maxPayloadSize = 256;
-  size_t totalLength = message.size() + 1;
   size_t offset = 0;
 
-  // Calculating the number of packets that will be needed to be send for this
-  // message
-  int number_of_packages_to_be_sended =
-      (totalLength + maxPayloadSize - 1) / maxPayloadSize;
+    //-----------FOR MSG-------------
+  if (is_file == false) {
 
-  // Creating the first packet that contains the size of the big message; It
-  // will have 2 flags on : serialize and start transmition flag
-  if (number_of_packages_to_be_sended > 1) {
+    size_t totalLength = message.size() + 1;
+    // Calculating the number of packets that will be needed to be send for this
+    // message
+    int number_of_packages_to_be_sended =
+        (totalLength + maxPayloadSize - 1) / maxPayloadSize;
+
+    // Creating the first packet that contains the size of the big message; It
+    // will have 2 flags on : serialize and start transmition flag
+    if (number_of_packages_to_be_sended > 1) {
+      CustomPacket start_packet;
+
+      start_packet.set_start_transmition_flag();
+      start_packet.set_serialize_flag();
+
+      std::string length_ser = std::to_string(number_of_packages_to_be_sended);
+      memcpy(start_packet.payload, length_ser.data(), length_ser.length());
+      start_packet.payload[length_ser.length()] = '\0'; // Add null terminator
+      start_packet.length = length_ser.length() + 1; // Include null terminator in length
+
+      CustomPacket::incrementPacketId(packet_id);
+      start_packet.packet_id = packet_id;
+
+      start_packet.checksum = start_packet.calculateChecksum();
+
+      packets[packet_id] = start_packet;
+    }
+
+    while (offset < totalLength) {
+
+      CustomPacket packet;
+
+      // copying in memory in the current packet.payload the message string
+      size_t length = std::min(maxPayloadSize, totalLength - offset);
+      memcpy(packet.payload, message.data() + offset, length);
+
+      // Setting length
+      packet.length = length;
+      offset += length;
+
+      if (number_of_packages_to_be_sended > 1) {
+        packet.set_serialize_flag();
+      }
+
+      if (offset >= totalLength) {
+        packet.set_end_transmition_flag(); // Last packet
+        // packet.payload[length] = '\0';
+        // packet.length += 1;
+      }
+
+      CustomPacket::incrementPacketId(packet_id);
+      packet.packet_id = packet_id;
+      packet.checksum = packet.calculateChecksum();
+      packets[packet_id] = packet;
+    }
+
+  }else {
+    //-----------FOR FILE-------------
+    //the msg will be the path
+    std::string file_path = message;
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+      {
+        std::cerr << "Error: Could not open file: " << file_path << "\n";
+      }
+      //dont how what to return; null recommanded
+      return packets;
+    }
+
+
+    // Extract file name and type
+    std::string file_name = file_path.substr(file_path.find_last_of("/\\") + 1);
+    std::string file_extension = file_name.substr(file_name.find_last_of('.') + 1);
+
+    // Read the file content into a string
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string file_content = oss.str();
+    file.close();
+
+    {
+      std::cout << "File read successfully. Size: " << file_content.size() << " bytes\n";
+    }
+
+    //Starting packet
+    size_t totalLength = file_content.size() + 1;
+    int number_of_packages_to_be_sended = (totalLength + maxPayloadSize - 1) / maxPayloadSize + 1;
     CustomPacket start_packet;
-
     start_packet.set_start_transmition_flag();
     start_packet.set_serialize_flag();
-
-    if (is_file == true) start_packet.setMsgType(1);
+    start_packet.setMsgType(1);
 
     std::string length_ser = std::to_string(number_of_packages_to_be_sended);
     memcpy(start_packet.payload, length_ser.data(), length_ser.length());
@@ -124,38 +203,54 @@ CustomPacket::fragmentMessage(const std::string &message,
     start_packet.checksum = start_packet.calculateChecksum();
 
     packets[packet_id] = start_packet;
-  }
 
-  while (offset < totalLength) {
-
-    CustomPacket packet;
-
-    // copying in memory in the current packet.payload the message string
-    size_t length = std::min(maxPayloadSize, totalLength - offset);
-    memcpy(packet.payload, message.data() + offset, length);
-
-    // Setting length
-    packet.length = length;
-    offset += length;
-
-    if (number_of_packages_to_be_sended > 1) {
-      packet.set_serialize_flag();
-    }
-
-    if (offset >= totalLength) {
-      packet.set_end_transmition_flag(); // Last packet
-      // packet.payload[length] = '\0';
-      // packet.length += 1;
-    }
-
-    if (is_file == true) packet.setMsgType(1);
+    // Create a metadata packet
+    std::string metadata = file_name + "|" + file_extension + "|" + std::to_string(file_content.size());
+    CustomPacket metadata_packet;
+    metadata_packet.set_serialize_flag();
+    metadata_packet.setMsgType(1);
+    memcpy(metadata_packet.payload, metadata.data(), metadata.size());
+    metadata_packet.length = metadata.size();
 
     CustomPacket::incrementPacketId(packet_id);
-    packet.packet_id = packet_id;
-    packet.checksum = packet.calculateChecksum();
-    packets[packet_id] = packet;
-  }
+    metadata_packet.packet_id = packet_id;
 
+    metadata_packet.checksum = metadata_packet.calculateChecksum();
+
+    // Send the metadata packet
+    packets[packet_id] = metadata_packet;
+
+    {
+      std::cout << "Metadata packet sent: " << metadata << "\n";
+    }
+
+    while (offset < totalLength) {
+
+      CustomPacket packet;
+
+      // copying in memory in the current packet.payload the message string
+      size_t length = std::min(maxPayloadSize, totalLength - offset);
+      memcpy(packet.payload, file_content.data() + offset, length);
+
+      // Setting length
+      packet.length = length;
+      offset += length;
+
+      packet.set_serialize_flag();
+      packet.setMsgType(1);
+
+      if (offset >= totalLength) {
+        packet.set_end_transmition_flag(); // Last packet
+        // packet.payload[length] = '\0';
+        // packet.length += 1;
+      }
+
+      CustomPacket::incrementPacketId(packet_id);
+      packet.packet_id = packet_id;
+      packet.checksum = packet.calculateChecksum();
+      packets[packet_id] = packet;
+    }
+  }
   return packets;
 }
 
