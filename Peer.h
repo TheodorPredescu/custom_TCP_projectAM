@@ -76,6 +76,7 @@ private:
     void adding_messages_in_received_messages(const std::string &msg);
 
     void ensureDataFolderExists();
+    std::string getLocalIPAddress() const;
 };
 
 #endif // PEER_H

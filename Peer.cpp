@@ -1,4 +1,3 @@
-#include "CustomPacket.h"
 #include <arpa/inet.h>
 #include <cstdint>
 #include <cstdlib>
@@ -21,8 +20,11 @@
 #include <sys/stat.h>  // For mkdir
 #include <sys/types.h> // For mkdir
 #include <filesystem>  // For checking if the folder exists (C++17)
+#include <ifaddrs.h>
+#include <netdb.h>
 
 #include "Peer.h"
+#include "CustomPacket.h"
 
 // I need to add first the ipaddress of the user (sockaddr_in) and initialize it in startPeer funtion;
 // it will then remain in the Peer class (it is a private variable)
@@ -1017,15 +1019,15 @@ void Peer::runTerminalInterface() {
       while (true) {
           std::string received_message = get_messages_received();
           {
-              std::lock_guard<std::mutex> lock(cout_mutex);
-              std::cout << "\n[Received Message]: " << received_message << "\n";
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "\n[Received Message]: " << received_message << "\n";
 
-              // Reprint the informational text
-              std::cout << "\nCommands:\n";
-              std::cout << "1. Send message\n";
-              std::cout << "2. Send file\n";
-              std::cout << "3. Exit\n";
-              std::cout << "Enter your choice: ";
+            // Reprint the informational text
+            std::cout << "\nCommands:\n";
+            std::cout << "1. Send message\n";
+            std::cout << "2. Send file\n";
+            std::cout << "3. Exit\n";
+            std::cout << "Enter your choice: .";
           }
       }
   });
@@ -1033,12 +1035,12 @@ void Peer::runTerminalInterface() {
   // Main loop for user commands
   while (true) {
       {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "\nCommands:\n";
-          std::cout << "1. Send message\n";
-          std::cout << "2. Send file\n";
-          std::cout << "3. Exit\n";
-          std::cout << "Enter your choice: ";
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "\nCommands:\n";
+        std::cout << "1. Send message\n";
+        std::cout << "2. Send file\n";
+        std::cout << "3. Exit.\n";
+        std::cout << "Enter your choice: ";
       }
 
       int choice;
@@ -1118,4 +1120,33 @@ void Peer::ensureDataFolderExists() {
       std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout<<"Folder exists.\n";
     }
+}
+
+// I need to use this function in setting up the ip address, currently I use constants;
+// I need to not use the port as a hard codded value
+std::string getLocalIPAddress() {
+    struct ifaddrs *ifaddr, *ifa;
+    char host[NI_MAXHOST];
+
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        return "";
+    }
+
+    for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) continue;
+
+        if (ifa->ifa_addr->sa_family == AF_INET) { // Check for IPv4
+            if (getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in),
+                            host, NI_MAXHOST, nullptr, 0, NI_NUMERICHOST) == 0) {
+                if (std::string(ifa->ifa_name) != "lo") { // Skip loopback interface
+                    freeifaddrs(ifaddr);
+                    return std::string(host);
+                }
+            }
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return "";
 }
