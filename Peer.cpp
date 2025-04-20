@@ -56,7 +56,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
   ip_header->ttl = 64; // Time to live
   ip_header->protocol = IPPROTO_RAW; // Protocol (raw socket)
   ip_header->check = 0; // Checksum (set to 0 for now, kernel may calculate it)
-  ip_header->saddr = inet_addr("127.0.0.1"); // Source IP address
+  ip_header->saddr = inet_addr(localIPAddress.c_str()); // Source IP address
   ip_header->daddr = client_addr.sin_addr.s_addr; // Destination IP address
 
   // Copy the payload (CustomPacket) into the buffer after the IP header
@@ -1051,12 +1051,12 @@ void Peer::runTerminalInterface() {
   // Start a thread to print received messages
   std::thread message_printer_thread([this]() {
 
-      bool var_is_connected;
-      {
-        std::lock_guard<std::mutex> lock(is_connected_mutex);
-        var_is_connected = this->is_connected;
-      }
-      while (var_is_connected) {
+      // bool var_is_connected;
+      // {
+      //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+      //   var_is_connected = this->is_connected;
+      // }
+      while (true) {
           std::string received_message = get_messages_received();
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1067,13 +1067,13 @@ void Peer::runTerminalInterface() {
             std::cout << "1. Send message\n";
             std::cout << "2. Send file\n";
             std::cout << "3. Exit\n";
-            std::cout << "Enter your choice: .";
+            std::cout << "Enter your choice: \n";
           }
 
-        {
-          std::lock_guard<std::mutex> lock(is_connected_mutex);
-          var_is_connected = this->is_connected;
-        }
+        // {
+        //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+        //   var_is_connected = this->is_connected;
+        // }
       }
   });
 
@@ -1084,14 +1084,14 @@ void Peer::runTerminalInterface() {
   }
 
   // Main loop for user commands
-  while (true) {
+  while (var_is_connected) {
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
         std::cout << "\nCommands:\n";
         std::cout << "1. Send message\n";
         std::cout << "2. Send file\n";
-        std::cout << "3. Exit.\n";
-        std::cout << "Enter your choice: ";
+        std::cout << "3. Exit\n";
+        std::cout << "Enter your choice: \n";
       }
 
       int choice;
