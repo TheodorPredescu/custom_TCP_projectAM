@@ -30,6 +30,8 @@ private:
     // bool client_addr_initialized = false; // Track if the client's address is initialized
     uint16_t packet_id = UINT16_MAX;
 
+    std::string localIPAddress;
+
     //For dealing with error packets, i need to store for a while the packets
     // I will try to memorate a finite number of packets (1000)
     std::map<uint16_t, CustomPacket> packetsToBeSend;
@@ -44,6 +46,7 @@ private:
     std::mutex packet_id_mutex;
     std::mutex packetsToBeSend_mutex;
     std::mutex adding_msg_received;
+    std::mutex is_connected_mutex;
 
     // Declare cout_mutex as extern
     std::mutex cout_mutex;

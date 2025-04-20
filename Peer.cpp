@@ -204,14 +204,20 @@ void Peer::listenForPackets() {
       // packet.printFlags();
     }
 
+    bool var_is_connected;
+    {
+      std::lock_guard<std::mutex> lock(is_connected_mutex);
+      var_is_connected = is_connected;
+    }
+
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Received a packet; isconnected: " << is_connected <<"\npacket size: " << 
+      std::cout << "Received a packet; isconnected: " << var_is_connected <<"\npacket size: " << 
       packet.length<< std::endl;
     }
 
     // Sequence for responding to a connection request
-    if (!is_connected) {
+    if (!var_is_connected) {
       if (packet.get_urgent_flag() && packet.get_start_transmition_flag()) {
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
@@ -231,7 +237,10 @@ void Peer::listenForPackets() {
         }
 
         // Mark the peer as connected
-        this->is_connected = true;
+        {
+          std::lock_guard<std::mutex> lock(is_connected_mutex);
+          this->is_connected = true;
+        }
         continue;
 
       } else {
@@ -275,7 +284,11 @@ void Peer::listenForPackets() {
           std::lock_guard<std::mutex> lock (cout_mutex);
           std::cout<< "Sended packet with ack of end transmition...:\n";
         }
-        this->is_connected = false;
+
+        {
+          std::lock_guard<std::mutex> lock (is_connected_mutex);
+          this->is_connected = false;
+        }
 
         // Close the socket
         close(sock);
@@ -755,7 +768,11 @@ void Peer::connectToPeer(const char *remote_ip) {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "Connection established with remote peer at " << remote_ip << ".\n";
   }
-  this->is_connected = true;
+  
+  {
+    std::lock_guard<std::mutex> lock(is_connected_mutex);
+    this->is_connected = true;
+  }
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -815,7 +832,11 @@ void Peer::endConnection() {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "Connection successfully ended.\n";
   }
-  this->is_connected = false;
+  
+  {
+    std::lock_guard<std::mutex> lock(is_connected_mutex);
+    this->is_connected = false;
+  }
 
   // Close the socket
   close(sock);
@@ -955,6 +976,19 @@ std::string Peer::get_messages_received() {
 
 //-------------------------------------------------------------------------------------------------------
 void Peer::runTerminalInterface() {
+
+  this->localIPAddress = getLocalIPAddress();
+  if (localIPAddress == "") {
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Cannot get IPAddress!!";
+      }
+      return;
+  }else {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "IP Address: " << localIPAddress << std::endl;
+  }
+
   {
       std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout << "Welcome to the Peer CLI!\n";
@@ -1016,7 +1050,13 @@ void Peer::runTerminalInterface() {
 
   // Start a thread to print received messages
   std::thread message_printer_thread([this]() {
-      while (true) {
+
+      bool var_is_connected;
+      {
+        std::lock_guard<std::mutex> lock(is_connected_mutex);
+        var_is_connected = this->is_connected;
+      }
+      while (var_is_connected) {
           std::string received_message = get_messages_received();
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1029,8 +1069,19 @@ void Peer::runTerminalInterface() {
             std::cout << "3. Exit\n";
             std::cout << "Enter your choice: .";
           }
+
+        {
+          std::lock_guard<std::mutex> lock(is_connected_mutex);
+          var_is_connected = this->is_connected;
+        }
       }
   });
+
+  bool var_is_connected;
+  {
+    std::lock_guard<std::mutex> lock(is_connected_mutex);
+    var_is_connected = this->is_connected;
+  }
 
   // Main loop for user commands
   while (true) {
@@ -1090,6 +1141,11 @@ void Peer::runTerminalInterface() {
               std::cerr << "Invalid choice. Please try again.\n";
           }
       }
+
+    {
+      std::lock_guard<std::mutex> lock(is_connected_mutex);
+      var_is_connected = this->is_connected;
+    }
   }
 
   // Wait for the listener thread to finish
@@ -1124,7 +1180,7 @@ void Peer::ensureDataFolderExists() {
 
 // I need to use this function in setting up the ip address, currently I use constants;
 // I need to not use the port as a hard codded value
-std::string getLocalIPAddress() {
+std::string Peer::getLocalIPAddress() const {
     struct ifaddrs *ifaddr, *ifa;
     char host[NI_MAXHOST];
 
