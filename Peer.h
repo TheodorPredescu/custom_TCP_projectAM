@@ -20,6 +20,7 @@ public:
     void endConnection();
 
     std::string get_messages_received();
+    bool confirm_file_received();
 
     void runTerminalInterface();
 
@@ -41,11 +42,13 @@ private:
 
     //For seeing messages
     std::vector<std::string> messages_received;
+    bool file_received = false;
 
     std::mutex packet_mutex;
     std::mutex packet_id_mutex;
     std::mutex packetsToBeSend_mutex;
     std::mutex adding_msg_received;
+    std::mutex checking_file_received;
     std::mutex is_connected_mutex;
 
     // Declare cout_mutex as extern
@@ -55,6 +58,7 @@ private:
     std::vector<CustomPacket> packet_vector;
     std::condition_variable packet_cv;
     std::condition_variable messages_received_cv;
+    std::condition_variable checking_file_received_cv;
 
     sockaddr_in peer_addr, client_addr;
 
@@ -80,6 +84,7 @@ private:
 
     void ensureDataFolderExists();
     std::string getLocalIPAddress() const;
+    void print_commands_options();
 };
 
 #endif // PEER_H

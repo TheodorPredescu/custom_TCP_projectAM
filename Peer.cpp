@@ -521,7 +521,6 @@ void Peer::processPackets() {
           //For showing it in interface
           adding_messages_in_received_messages(msg);
 
-          //TODO: Reconstruct the binary flags
           // Nush sigur; nu pare deloc eficient sa folosesc acelasi tip de packet pentru date binare:/
 
 
@@ -530,7 +529,6 @@ void Peer::processPackets() {
 
       } else {
         // -----------FILE TYPE-------------------
-        //TODO: This is not CHECKED!!!
 
         if (packet.get_start_transmition_flag() && serialise_packet_size == 0) {
           serialise_packet_size = std::stoi(std::string(packet.payload, packet.length));
@@ -635,6 +633,18 @@ void Peer::processPackets() {
           file_size = 0;
           serialise_packet_size = 0;
           procesed_packets = 0;
+
+          // // Reprint the commands
+          // {
+          //     std::lock_guard<std::mutex> lock(cout_mutex);
+          //     std::cout << "\nCommands:\n";
+          //     std::cout << "1. Send message\n";
+          //     std::cout << "2. Send file\n";
+          //     std::cout << "3. Exit\n";
+          //     std::cout << "Enter your choice: \n";
+          // }
+
+          print_commands_options();
         }
 
       }
@@ -675,7 +685,6 @@ void Peer::sendMessage(const std::string &msg) {
 }
 
 //-------------------------------------------------------------------------------------------------------
-//TODO: Need to implement the receiver code for this
 void Peer::sendFile(const std::string &file_path) {
   std::map<uint16_t, CustomPacket> packet_list = CustomPacket::fragmentMessage(file_path, packet_id, true);
 
@@ -974,6 +983,32 @@ std::string Peer::get_messages_received() {
 
 }
 
+void Peer::print_commands_options() {
+
+  std::lock_guard<std::mutex> lock(cout_mutex);
+  std::cout << "\nCommands:\n";
+  std::cout << "1. Send message\n";
+  std::cout << "2. Send file\n";
+  std::cout << "3. Exit\n";
+  std::cout << "Enter your choice: \n";
+}
+//-------------------------------------------------------------------------------------------------------
+
+// bool Peer::confirm_file_received() {
+
+//   {
+//     std::unique_lock<std::mutex> lock(checking_file_received);
+//     checking_file_received_cv.wait(lock, [this] {return checking_file_received;});
+
+//     {
+//       std::lock_guard<std::mutex> lock(cout_mutex);
+//       std::cout <<"You have received a file. It has been saved in the data folder.\n";
+//     }
+//   }
+//   return true;
+
+// }
+
 //-------------------------------------------------------------------------------------------------------
 void Peer::runTerminalInterface() {
 
@@ -1062,13 +1097,15 @@ void Peer::runTerminalInterface() {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "\n[Received Message]: " << received_message << "\n";
 
-            // Reprint the informational text
-            std::cout << "\nCommands:\n";
-            std::cout << "1. Send message\n";
-            std::cout << "2. Send file\n";
-            std::cout << "3. Exit\n";
-            std::cout << "Enter your choice: \n";
+            // // Reprint the informational text
+            // std::cout << "\nCommands:\n";
+            // std::cout << "1. Send message\n";
+            // std::cout << "2. Send file\n";
+            // std::cout << "3. Exit\n";
+            // std::cout << "Enter your choice: \n";
           }
+
+          print_commands_options();
 
         // {
         //   std::lock_guard<std::mutex> lock(is_connected_mutex);
@@ -1085,16 +1122,18 @@ void Peer::runTerminalInterface() {
 
   // Main loop for user commands
   while (var_is_connected) {
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "\nCommands:\n";
-        std::cout << "1. Send message\n";
-        std::cout << "2. Send file\n";
-        std::cout << "3. Exit\n";
-        std::cout << "Enter your choice: \n";
-      }
+      // {
+      //   std::lock_guard<std::mutex> lock(cout_mutex);
+      //   std::cout << "\nCommands:\n";
+      //   std::cout << "1. Send message\n";
+      //   std::cout << "2. Send file\n";
+      //   std::cout << "3. Exit\n";
+      //   std::cout << "Enter your choice: \n";
+      // }
+      print_commands_options();
 
       int choice;
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
       std::cin >> choice;
 
       // Validate input
