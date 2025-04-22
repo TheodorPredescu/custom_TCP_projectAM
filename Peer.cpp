@@ -330,7 +330,7 @@ void Peer::listenForPackets() {
       }
 
       if (packet.get_urgent_flag() && packet.get_ack_flag()) {
-        bool var_req_end;
+        bool var_req_end = false;
         {
           std::lock_guard<std::mutex> lock(requested_end_transmition_mutex);
           var_req_end = this->requested_end_transmition;
@@ -354,21 +354,22 @@ void Peer::listenForPackets() {
             std::cout << "socket closed.\n";
           }
 
-                }
-              }
+        }
+        return;
+      }
 
-              {
-              // Add the packet to the queue
-                std::lock_guard<std::mutex> lock(packet_mutex);
-                packet_vector.push_back(packet);
-                {
-                  std::lock_guard<std::mutex> lock(cout_mutex);
-                  std::cout<<"Added the packet with id: " << packet.packet_id << " in the packet_vector.\n";
-                }
-                packet_cv.notify_one(); // Notify the processing thread
-              }
-            }
-          }
+      {
+      // Add the packet to the queue
+        std::lock_guard<std::mutex> lock(packet_mutex);
+        packet_vector.push_back(packet);
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<<"Added the packet with id: " << packet.packet_id << " in the packet_vector.\n";
+        }
+        packet_cv.notify_one(); // Notify the processing thread
+      }
+    }
+  }
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -840,6 +841,7 @@ void Peer::endConnection() {
     std::lock_guard<std::mutex> lock(requested_end_transmition_mutex);
     this->requested_end_transmition = true;
   }
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // Send the end connection packet
   sendPacket(end_packet);
