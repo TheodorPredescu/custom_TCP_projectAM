@@ -990,7 +990,7 @@ void Peer::print_commands_options() {
   std::cout << "1. Send message\n";
   std::cout << "2. Send file\n";
   std::cout << "3. Exit\n";
-  std::cout << "Enter your choice: \n";
+  std::cout << "Enter your choice:\n";
 }
 //-------------------------------------------------------------------------------------------------------
 
@@ -1137,7 +1137,7 @@ void Peer::runTerminalInterface() {
       print_commands_options();
 
       int choice;
-      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+      // std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
       std::cin >> choice;
 
       // Validate input
