@@ -288,10 +288,10 @@ void Peer::listenForPackets() {
           std::cout<< "Sended packet with ack of end transmition...:\n";
         }
 
-        // {
-        //   std::lock_guard<std::mutex> lock (is_connected_mutex);
-        //   this->is_connected = false;
-        // }
+        {
+          std::lock_guard<std::mutex> lock (is_connected_mutex);
+          this->is_connected = false;
+        }
 
         // Close the socket
         close(sock);
@@ -344,6 +344,11 @@ void Peer::listenForPackets() {
           var_req_end = this->requested_end_transmition;
         }
 
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout<<"Ack packet received\n";
+        }
+
         if (var_req_end) {
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
@@ -361,9 +366,15 @@ void Peer::listenForPackets() {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "socket closed.\n";
           }
+          {
+            std::lock_guard<std::mutex> lock(exiting_mutex);
+            this->exiting = true;
+          }
 
+          return;
         }
-        return;
+
+        continue;
       }
 
       {
@@ -862,10 +873,10 @@ void Peer::endConnection() {
   // Send the end connection packet
   sendPacket(end_packet);
 
-  {
-    std::lock_guard<std::mutex> lock(exiting_mutex);
-    this->exiting = true;
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(exiting_mutex);
+  //   this->exiting = true;
+  // }
 
   {
     std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1148,17 +1159,16 @@ void Peer::runTerminalInterface() {
       //   var_is_connected = this->is_connected;
       // }
       while (true) {
+          
+        {
+          std::lock_guard<std::mutex> lock(exiting_mutex);
+          if (exiting) break;
+        }
           std::string received_message = get_messages_received();
+
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "\n[Received Message]: " << received_message << "\n";
-
-            // // Reprint the informational text
-            // std::cout << "\nCommands:\n";
-            // std::cout << "1. Send message\n";
-            // std::cout << "2. Send file\n";
-            // std::cout << "3. Exit\n";
-            // std::cout << "Enter your choice: \n";
           }
 
           print_commands_options();
