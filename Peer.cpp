@@ -329,18 +329,46 @@ void Peer::listenForPackets() {
         continue;
       }
 
-      {
-      // Add the packet to the queue
-        std::lock_guard<std::mutex> lock(packet_mutex);
-        packet_vector.push_back(packet);
+      if (packet.get_urgent_flag() && packet.get_ack_flag()) {
+        bool var_req_end;
         {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout<<"Added the packet with id: " << packet.packet_id << " in the packet_vector.\n";
+          std::lock_guard<std::mutex> lock(requested_end_transmition_mutex);
+          var_req_end = this->requested_end_transmition;
         }
-        packet_cv.notify_one(); // Notify the processing thread
-      }
-    }
-  }
+
+        if (var_req_end) {
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Connection successfully ended.\n";
+          }
+
+          {
+            std::lock_guard<std::mutex> lock(is_connected_mutex);
+            this->is_connected = false;
+          }
+
+          // Close the socket
+          close(sock);
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "socket closed.\n";
+          }
+
+                }
+              }
+
+              {
+              // Add the packet to the queue
+                std::lock_guard<std::mutex> lock(packet_mutex);
+                packet_vector.push_back(packet);
+                {
+                  std::lock_guard<std::mutex> lock(cout_mutex);
+                  std::cout<<"Added the packet with id: " << packet.packet_id << " in the packet_vector.\n";
+                }
+                packet_cv.notify_one(); // Notify the processing thread
+              }
+            }
+          }
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -808,6 +836,11 @@ void Peer::endConnection() {
     end_packet.checksum = end_packet.calculateChecksum();
   }
 
+  {
+    std::lock_guard<std::mutex> lock(requested_end_transmition_mutex);
+    this->requested_end_transmition = true;
+  }
+
   // Send the end connection packet
   sendPacket(end_packet);
 
@@ -818,51 +851,51 @@ void Peer::endConnection() {
   }
 
   // Wait for acknowledgment
-  CustomPacket response_packet;
-  while (true) {
-    receivePacket(response_packet);
+  // CustomPacket response_packet;
+  // while (true) {
+  //   receivePacket(response_packet);
 
-    if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "\nReceived acknowledgment for end connection packet.\n";
-      }
-      break;
-    } else {
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "\n\nReceived a packet in waiting for ack, but it does not have the expected flags. Waiting...\n";
-      }
-    }
-  }
+  //   if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
+  //     {
+  //       std::lock_guard<std::mutex> lock(cout_mutex);
+  //       std::cout << "\nReceived acknowledgment for end connection packet.\n";
+  //     }
+  //     break;
+  //   } else {
+  //     {
+  //       std::lock_guard<std::mutex> lock(cout_mutex);
+  //       std::cout << "\n\nReceived a packet in waiting for ack, but it does not have the expected flags. Waiting...\n";
+  //     }
+  //   }
+  // }
 
   // Mark the connection as disconnected
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "Connection successfully ended.\n";
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(cout_mutex);
+  //   std::cout << "Connection successfully ended.\n";
+  // }
   
-  {
-    std::lock_guard<std::mutex> lock(is_connected_mutex);
-    this->is_connected = false;
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+  //   this->is_connected = false;
+  // }
 
-  // Close the socket
-  close(sock);
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "socket closed.\n";
-  }
+  // // Close the socket
+  // close(sock);
+  // {
+  //   std::lock_guard<std::mutex> lock(cout_mutex);
+  //   std::cout << "socket closed.\n";
+  // }
 
-  // For checking functionality and contents (debug)
-  {
-    std::lock_guard<std::mutex> lock(packetsToBeSend_mutex);
+  // // For checking functionality and contents (debug)
+  // {
+  //   std::lock_guard<std::mutex> lock(packetsToBeSend_mutex);
 
-    for (const auto &[key, val] : packetsToBeSend) {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << key << "; " << std::string(val.payload, val.length) << "\n";
-    }
-  }
+  //   for (const auto &[key, val] : packetsToBeSend) {
+  //     std::lock_guard<std::mutex> lock(cout_mutex);
+  //     std::cout << key << "; " << std::string(val.payload, val.length) << "\n";
+  //   }
+  // }
 
 }
 //-------------------------------------------------------------------------------------------------------
