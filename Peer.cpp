@@ -1195,6 +1195,10 @@ void Peer::runTerminalInterface() {
       
     {
       std::lock_guard<std::mutex> lock(exiting_mutex);
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Breaking main loop\n";
+      }
       if (exiting) break;
     }
       print_commands_options();
