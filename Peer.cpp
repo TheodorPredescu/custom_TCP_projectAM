@@ -292,7 +292,7 @@ void Peer::listenForPackets() {
           std::cout << "Socket closed.\n";
         }
 
-        return;
+        exit(0);
 
       }
 
