@@ -23,6 +23,7 @@
 #include <ifaddrs.h>
 #include <netdb.h>
 
+//For input select reader
 #include "Peer.h"
 #include "CustomPacket.h"
 
@@ -249,7 +250,7 @@ void Peer::listenForPackets() {
       } else {
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cerr << "Unexpected packet received before connection was established. Ignoring.\n";
+          std::cout << "Unexpected packet received before connection was established. Ignoring.\n\n";
         }
         continue;
       }
@@ -371,6 +372,9 @@ void Peer::listenForPackets() {
             this->exiting = true;
           }
 
+          messages_received_cv.notify_one();
+          // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
           return;
         }
 
@@ -418,6 +422,12 @@ void Peer::processPackets() {
     {
       std::unique_lock<std::mutex> lock(packet_mutex);
       packet_cv.wait(lock, [this] { return !packet_vector.empty(); });
+
+      //End thread on receiving the signal
+      {
+        std::lock_guard<std::mutex> lock(exiting_mutex);
+      if (exiting) break;
+      }
 
       {
         std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1195,18 +1205,34 @@ void Peer::runTerminalInterface() {
       
     {
       std::lock_guard<std::mutex> lock(exiting_mutex);
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Breaking main loop\n";
-      }
       if (exiting) break;
     }
       print_commands_options();
 
       int choice;
       // std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
-      std::cin >> choice;
+      // std::cin >> choice;
+      
+      // Non-blocking input
+      while (true) {
+          {
+              std::lock_guard<std::mutex> lock(exiting_mutex);
+              if (exiting) break; // Exit the loop if the `exiting` flag is set
+          }
 
+          if (std::cin.peek() != EOF) { // Check if input is available
+              std::cin >> choice;
+              break;
+          }
+
+          // Sleep briefly to avoid busy-waiting
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+
+    {
+        std::lock_guard<std::mutex> lock(exiting_mutex);
+        if (exiting) break; // Exit the loop if the `exiting` flag is set
+    }
       // Validate input
       if (std::cin.fail()) {
           std::cin.clear(); // Clear the error flag
