@@ -180,11 +180,6 @@ void Peer::listenForPackets() {
     CustomPacket packet;
     receivePacket(packet);
 
-    // {
-    //   std::lock_guard<std::mutex> lock(cout_mutex);
-    //   std::cout << "---Waiting to receive a packet.\n";
-    // }
-
     if (packet.length == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
@@ -980,8 +975,8 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
     packet_id = packet_id_received;
     CustomPacket::incrementPacketId(packet_id);
   } else {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
+    // std::lock_guard<std::mutex> lock(cout_mutex);
+    // std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
   }
 }
 
@@ -1212,7 +1207,7 @@ void Peer::runTerminalInterface() {
               std::cout << "Exiting...\n";
           }
           endConnection();
-          break;
+          exit(0);
       } else {
           {
               std::lock_guard<std::mutex> lock(cout_mutex);
