@@ -177,6 +177,14 @@ void Peer::receivePacket(CustomPacket &packet) {
 void Peer::listenForPackets() {
 
   while (true) {
+
+    //End thread on receiving the signal
+    {
+      std::lock_guard<std::mutex> lock(exiting_mutex);
+    if (exiting) break;
+    }
+
+
     CustomPacket packet;
     receivePacket(packet);
 
@@ -262,7 +270,7 @@ void Peer::listenForPackets() {
       // TODO: we need to send 1 more packet in this sequence to be sore that we bouth end it.
       if (packet.get_urgent_flag() && packet.get_start_transmition_flag()) {
         std::lock_guard<std::mutex> lock (cout_mutex);
-        std::cout<<"Receaved again a start transmition!\n\tIgnorring...\n";
+        std::cout<<"Received again a start transmition!\n\tIgnorring...\n";
         continue;
       }
       
@@ -270,7 +278,7 @@ void Peer::listenForPackets() {
       if (packet.get_urgent_flag() && packet.get_end_transmition_flag()) {
         {
           std::lock_guard<std::mutex> lock (cout_mutex);
-          std::cout<< "Receaved end transmition packet. Responding...\n";
+          std::cout<< "Received end transmition packet. Responding...\n";
         }
         
         incrementing_and_checking_packet_id(packet.packet_id);
@@ -280,20 +288,25 @@ void Peer::listenForPackets() {
           std::cout<< "Sended packet with ack of end transmition...:\n";
         }
 
-        {
-          std::lock_guard<std::mutex> lock (is_connected_mutex);
-          this->is_connected = false;
-        }
+        // {
+        //   std::lock_guard<std::mutex> lock (is_connected_mutex);
+        //   this->is_connected = false;
+        // }
 
         // Close the socket
         close(sock);
+        messages_received_cv.notify_one();
         {
           std::lock_guard<std::mutex> lock(cout_mutex);
           std::cout << "Socket closed.\n";
         }
 
-        exit(0);
+        {
+          std::lock_guard<std::mutex> lock(exiting_mutex);
+          this->exiting = true;
+        }
 
+        return;
       }
 
       //Responding to a missing packet from the serialise message
@@ -380,6 +393,14 @@ void Peer::processPackets() {
   std::ostringstream file_content;
   
   while (true) {
+
+    //End thread on receiving the signal
+    {
+      std::lock_guard<std::mutex> lock(exiting_mutex);
+    if (exiting) break;
+    }
+
+
     CustomPacket packet;
 
     // Wait for a packet to be available
@@ -842,6 +863,11 @@ void Peer::endConnection() {
   sendPacket(end_packet);
 
   {
+    std::lock_guard<std::mutex> lock(exiting_mutex);
+    this->exiting = true;
+  }
+
+  {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "Sent end connection packet with ID: " << end_packet.packet_id << "\n";
     end_packet.printFlags();
@@ -1156,14 +1182,11 @@ void Peer::runTerminalInterface() {
 
   // Main loop for user commands
   while (var_is_connected) {
-      // {
-      //   std::lock_guard<std::mutex> lock(cout_mutex);
-      //   std::cout << "\nCommands:\n";
-      //   std::cout << "1. Send message\n";
-      //   std::cout << "2. Send file\n";
-      //   std::cout << "3. Exit\n";
-      //   std::cout << "Enter your choice: \n";
-      // }
+      
+    {
+      std::lock_guard<std::mutex> lock(exiting_mutex);
+      if (exiting) break;
+    }
       print_commands_options();
 
       int choice;
@@ -1207,7 +1230,7 @@ void Peer::runTerminalInterface() {
               std::cout << "Exiting...\n";
           }
           endConnection();
-          exit(0);
+          break;
       } else {
           {
               std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1230,6 +1253,9 @@ void Peer::runTerminalInterface() {
   if (message_printer_thread.joinable()) {
       message_printer_thread.detach(); // Detach the thread to allow it to exit independently
   }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  exit(0);
 }
 
 //-------------------------------------------------------------------------------------------------------

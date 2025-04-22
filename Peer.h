@@ -27,7 +27,7 @@ public:
 private:
     int sock;
     int serialise_packet_size = 0, procesed_packets = 0;
-    bool is_connected = false, requested_end_transmition = false;
+    bool is_connected = false, requested_end_transmition = false, exiting = false;
     // bool client_addr_initialized = false; // Track if the client's address is initialized
     uint16_t packet_id = UINT16_MAX;
 
@@ -51,6 +51,7 @@ private:
     std::mutex checking_file_received;
     std::mutex is_connected_mutex;
     std::mutex requested_end_transmition_mutex;
+    std::mutex exiting_mutex;
 
     // Declare cout_mutex as extern
     std::mutex cout_mutex;
