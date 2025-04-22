@@ -1114,10 +1114,14 @@ void Peer::runTerminalInterface() {
       }
   });
 
-  bool var_is_connected;
+  bool var_is_connected = false;
+
+  while (!var_is_connected) {
   {
     std::lock_guard<std::mutex> lock(is_connected_mutex);
     var_is_connected = this->is_connected;
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   // Main loop for user commands
