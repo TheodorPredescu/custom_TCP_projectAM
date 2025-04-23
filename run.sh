@@ -32,5 +32,5 @@ g++ -o main main.cpp Peer.cpp CustomPacket.cpp \
     imgui/backends/imgui_impl_glfw.cpp imgui/backends/imgui_impl_opengl3.cpp \
     -Iimgui -Iimgui/backends -lglfw -lGL -pthread
 # sudo ./main
-XDG_RUNTIME_DIR=/tmp/$USER-runtime-dir ./main
+XDG_RUNTIME_DIR=/tmp/$USER-runtime-dir sudo ./main
 rm main
