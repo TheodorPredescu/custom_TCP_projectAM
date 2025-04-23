@@ -77,12 +77,24 @@ void Peer::sendPacket(const CustomPacket &packet) {
 }
 
 //-------------------------------------------------------------------------------------------------------
-void Peer::startPeer(int port, const char *remote_ip) {
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "startPeer called with port: " << port
-            << " and remote_ip: " << (remote_ip ? remote_ip : "nullptr") << "\n";
-    }
+void Peer::startPeer() {
+
+  this->localIPAddress = getLocalIPAddress();
+  if (localIPAddress == "") {
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Cannot get IPAddress!!";
+      }
+      return;
+  }else {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "IP Address: " << localIPAddress << std::endl;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "startPeer called with port: " << this->port << "\n";
+  }
 
   sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
   if (sock < 0) {
@@ -90,49 +102,33 @@ void Peer::startPeer(int port, const char *remote_ip) {
     return;
   }
 
-  // ?????Not present
   peer_addr.sin_family = AF_INET;
-  peer_addr.sin_port = htons(port);
+  peer_addr.sin_port = htons(this->port);
 
-  if (remote_ip) {
-    if (inet_pton(AF_INET, remote_ip, &peer_addr.sin_addr) <= 0) {
-      std::cerr << "Invalid address/Address not supported: " << remote_ip
-                << std::endl;
-      return;
-    }
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout<< "Server mode" << std::endl;
+  }
+  peer_addr.sin_addr.s_addr = INADDR_ANY;
 
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout<<"Client mode initialized.\n";
-    }
-    connectToPeer(remote_ip);
+  if (bind(sock, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0) {
+    perror("Error binding socket");
+    std::cerr << "Error: Failed to bind socket to port " << port << std::endl;
+    close(sock);
+    return;
+  }
 
-  } else {
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout<< "Server mode" << std::endl;
-    }
-    peer_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(sock, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0) {
-      perror("Error binding socket");
-      std::cerr << "Error: Failed to bind socket to port " << port << std::endl;
-      close(sock);
-      return;
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout<< "Server mode initialized.\n";
-    }
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout<< "Server mode initialized.\n";
   }
 
   // Start threads for receiving and processing packets
-  std::thread receiver(&Peer::listenForPackets, this);
-  std::thread processor(&Peer::processPackets, this);
+  // std::thread receiver(&Peer::listenForPackets, this);
+  // std::thread processor(&Peer::processPackets, this);
 
-  receiver.detach();
-  processor.detach();
+  // receiver.detach();
+  // processor.detach();
   // receiver.join();
   // processor.join();
 }
@@ -192,6 +188,11 @@ void Peer::listenForPackets() {
     if (packet.length == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
+    }
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout<<"Received a packet\n";
+
     }
      // Validate the packet
     if (packet.calculateChecksum() != packet.checksum) {
@@ -791,7 +792,7 @@ void Peer::connectToPeer(const char *remote_ip) {
 
   // Set up the destination address
   peer_addr.sin_family = AF_INET;
-  peer_addr.sin_port = htons(8080); // port
+  peer_addr.sin_port = htons(this->port); // port
   if (inet_pton(AF_INET, remote_ip, &peer_addr.sin_addr) <= 0) {
     std::cerr << "Invalid address/Address not supported: " << remote_ip << "\n";
     return;
@@ -1089,71 +1090,19 @@ void Peer::print_commands_options() {
 //-------------------------------------------------------------------------------------------------------
 void Peer::runTerminalInterface() {
 
-  this->localIPAddress = getLocalIPAddress();
-  if (localIPAddress == "") {
-      {
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Cannot get IPAddress!!";
-      }
-      return;
-  }else {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "IP Address: " << localIPAddress << std::endl;
-  }
+  // this->localIPAddress = getLocalIPAddress();
+  // if (localIPAddress == "") {
+  //     {
+  //       std::lock_guard<std::mutex> lock(cout_mutex);
+  //       std::cout << "Cannot get IPAddress!!";
+  //     }
+  //     return;
+  // }else {
+  //   std::lock_guard<std::mutex> lock(cout_mutex);
+  //   std::cout << "IP Address: " << localIPAddress << std::endl;
+  // }
 
-  {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Welcome to the Peer CLI!\n";
-      std::cout << "Choose mode:\n";
-      std::cout << "1. Server\n";
-      std::cout << "2. Client\n";
-  }
-
-  int mode;
-  std::cin >> mode;
-
-  if (mode == 1) {
-      // Server mode
-      int port;
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Enter the port to listen on: ";
-      }
-      std::cin >> port;
-
-      startPeer(port);
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Server started on port " << port << ". Waiting for messages...\n";
-      }
-
-  } else if (mode == 2) {
-      // Client mode
-      std::string remote_ip;
-      int port;
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Enter the server IP: ";
-      }
-      std::cin >> remote_ip;
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Enter the server port: ";
-      }
-      std::cin >> port;
-
-      startPeer(port, remote_ip.c_str());
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
-      }
-  } else {
-      {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cerr << "Invalid mode selected. Exiting...\n";
-      }
-      return;
-  }
+  startPeer();
 
   // Start a thread to listen for incoming packets
   std::thread listener_thread([this]() {
@@ -1190,49 +1139,109 @@ void Peer::runTerminalInterface() {
       }
   });
 
-  bool var_is_connected = false;
-
-  while (!var_is_connected) {
   {
-    std::lock_guard<std::mutex> lock(is_connected_mutex);
-    var_is_connected = this->is_connected;
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "Welcome to the Peer CLI!\n";
+    std::cout << "Choose mode:\n";
+    std::cout << "1. Client\n";
   }
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
+
+  // int mode;
+  // std::cin >> mode;
+
+  // bool var_is_connected;
+  // {
+  //   std::lock_guard<std::mutex>lock(is_connected_mutex);
+  //   var_is_connected = is_connected;
+  // }
+  // if (mode == 1 && !var_is_connected) {
+
+  //   std::string remote_ip;
+  //   {
+  //       std::lock_guard<std::mutex> lock(cout_mutex);
+  //       std::cout << "Enter the server IP: ";
+  //   }
+  //   std::cin >> remote_ip;
+  //   connectToPeer(remote_ip.c_str());
+  //   {
+  //       std::lock_guard<std::mutex> lock(cout_mutex);
+  //       std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
+  //   }
+  // } else if (!var_is_connected){
+  //     {
+  //         std::lock_guard<std::mutex> lock(cout_mutex);
+  //         std::cerr << "Invalid mode selected. Exiting...\n";
+  //     }
+  //     return;
+  // }else if (var_is_connected){
+
+  // }
+
+  // bool var_is_connected = false;
+
+  // while (!var_is_connected) {
+  //   {
+  //     std::lock_guard<std::mutex> lock(is_connected_mutex);
+  //     var_is_connected = this->is_connected;
+  //   }
+  //   std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // }
+
+  bool var_is_connected;
 
   // Main loop for user commands
-  while (var_is_connected) {
+  while (true) {
       
+    //********************************** */
+    //blocking sequence
     {
       std::lock_guard<std::mutex> lock(exiting_mutex);
       if (exiting) break;
     }
+
+    {
+      std::lock_guard<std::mutex>lock(is_connected_mutex);
+      var_is_connected = this->is_connected;
+    }
+
+    if (!var_is_connected) {
+
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Welcome to the Peer CLI!\n";
+        std::cout << "Choose mode:\n";
+        std::cout << "1. Client\n";
+      }
+
+      int mode;
+      std::cin >> mode;
+      
+      if (mode == 1) {
+        std::string remote_ip;
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Enter the server IP: ";
+        }
+        std::cin >> remote_ip;
+        connectToPeer(remote_ip.c_str());
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Connected to server at " << remote_ip << ":" << port << "\n";
+        }
+      } else {
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cerr << "Invalid mode selected. Exiting...\n";
+        }
+        return;
+      }
+    } else {
+
       print_commands_options();
 
       int choice;
-      // std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
-      // std::cin >> choice;
-      
-      // Non-blocking input
-      while (true) {
-          {
-              std::lock_guard<std::mutex> lock(exiting_mutex);
-              if (exiting) break; // Exit the loop if the `exiting` flag is set
-          }
+      std::cin >>choice;
 
-          if (std::cin.peek() != EOF) { // Check if input is available
-              std::cin >> choice;
-              break;
-          }
-
-          // Sleep briefly to avoid busy-waiting
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      }
-
-    {
-        std::lock_guard<std::mutex> lock(exiting_mutex);
-        if (exiting) break; // Exit the loop if the `exiting` flag is set
-    }
       // Validate input
       if (std::cin.fail()) {
           std::cin.clear(); // Clear the error flag
@@ -1277,11 +1286,79 @@ void Peer::runTerminalInterface() {
               std::cerr << "Invalid choice. Please try again.\n";
           }
       }
-
-    {
-      std::lock_guard<std::mutex> lock(is_connected_mutex);
-      var_is_connected = this->is_connected;
     }
+
+      
+    //   // Non-blocking input
+    //   while (true) {
+    //       {
+    //           std::lock_guard<std::mutex> lock(exiting_mutex);
+    //           if (exiting) break; // Exit the loop if the `exiting` flag is set
+    //       }
+
+    //       if (std::cin.peek() != EOF) { // Check if input is available
+    //           std::cin >> choice;
+    //           break;
+    //       }
+
+    //       // Sleep briefly to avoid busy-waiting
+    //       std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    //   }
+
+    // {
+    //     std::lock_guard<std::mutex> lock(exiting_mutex);
+    //     if (exiting) break; // Exit the loop if the `exiting` flag is set
+    // }
+      // // Validate input
+      // if (std::cin.fail()) {
+      //     std::cin.clear(); // Clear the error flag
+      //     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Discard invalid input
+      //     {
+      //         std::lock_guard<std::mutex> lock(cout_mutex);
+      //         std::cerr << "Invalid choice. Please try again.\n";
+      //     }
+      //     continue;
+      // }
+
+      // if (choice == 1) {
+      //     // Send a message
+      //     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+      //     std::string message;
+      //     {
+      //         std::lock_guard<std::mutex> lock(cout_mutex);
+      //         std::cout << "Enter your message: ";
+      //     }
+      //     std::getline(std::cin, message);
+      //     sendMessage(message);
+      // } else if (choice == 2) {
+      //     // Send a file
+      //     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear the newline character
+      //     std::string file_path;
+      //     {
+      //         std::lock_guard<std::mutex> lock(cout_mutex);
+      //         std::cout << "Enter the file path: ";
+      //     }
+      //     std::getline(std::cin, file_path);
+      //     sendFile(file_path);
+      // } else if (choice == 3) {
+      //     {
+      //         std::lock_guard<std::mutex> lock(cout_mutex);
+      //         std::cout << "Exiting...\n";
+      //     }
+      //     endConnection();
+      //     break;
+      // } else {
+      //     {
+      //         std::lock_guard<std::mutex> lock(cout_mutex);
+      //         std::cerr << "Invalid choice. Please try again.\n";
+      //     }
+      // }
+
+    // {
+    //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+    //   var_is_connected = this->is_connected;
+    // }
+
   }
 
   // Wait for the listener thread to finish
@@ -1317,6 +1394,7 @@ void Peer::ensureDataFolderExists() {
     }
 }
 
+//-------------------------------------------------------------------------------------------------------
 // I need to use this function in setting up the ip address, currently I use constants;
 // I need to not use the port as a hard codded value
 std::string Peer::getLocalIPAddress() const {

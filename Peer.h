@@ -10,7 +10,17 @@
 
 class Peer {
 public:
-    void startPeer(int port, const char *remote_ip = nullptr);
+
+    std::vector<std::string> messages_received;
+    bool is_connected = false, exiting = false;
+
+    std::mutex is_connected_mutex;
+    std::mutex cout_mutex;
+    std::mutex adding_msg_received;
+    std::mutex exiting_mutex;
+
+    void startPeer();
+    void connectToPeer(const char *remote_ip);
 
     void sendMessage(const std::string &msg);
 
@@ -27,7 +37,8 @@ public:
 private:
     int sock;
     int serialise_packet_size = 0, procesed_packets = 0;
-    bool is_connected = false, requested_end_transmition = false, exiting = false;
+    int port=8081;
+    bool requested_end_transmition = false;
     // bool client_addr_initialized = false; // Track if the client's address is initialized
     uint16_t packet_id = UINT16_MAX;
 
@@ -41,20 +52,15 @@ private:
     std::string folder_name = "data";
 
     //For seeing messages
-    std::vector<std::string> messages_received;
     bool file_received = false;
 
     std::mutex packet_mutex;
     std::mutex packet_id_mutex;
     std::mutex packetsToBeSend_mutex;
-    std::mutex adding_msg_received;
     std::mutex checking_file_received;
-    std::mutex is_connected_mutex;
     std::mutex requested_end_transmition_mutex;
-    std::mutex exiting_mutex;
 
     // Declare cout_mutex as extern
-    std::mutex cout_mutex;
 
     
     std::vector<CustomPacket> packet_vector;
@@ -66,7 +72,6 @@ private:
 
     void sendPacket(const CustomPacket &packet);
     void receivePacket(CustomPacket &packet);
-    void connectToPeer(const char *remote_ip);
     void composePacketMessage();
     void composePacketFile();
     void sendPacketFile();
@@ -86,6 +91,7 @@ private:
 
     void ensureDataFolderExists();
     std::string getLocalIPAddress() const;
+    int connectToAvailablePort();
     void print_commands_options();
 };
 
