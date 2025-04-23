@@ -1,20 +1,21 @@
 #!/bin/bash
 
-# Check if libglfw3-dev is installed
-if ! dpkg -s libglfw3-dev >/dev/null 2>&1; then
-    echo "libglfw3-dev is not installed. Installing..."
-    sudo apt-get install -y libglfw3-dev
-else
-    echo "libglfw3-dev is already installed."
-fi
+# Function to check and install a package
+check_and_install() {
+    PACKAGE=$1
+    if ! dpkg -s $PACKAGE >/dev/null 2>&1; then
+        echo "$PACKAGE is not installed. Installing..."
+        sudo apt-get install -y $PACKAGE
+    else
+        echo "$PACKAGE is already installed."
+    fi
+}
 
-# Check if libgl1-mesa-dev is installed
-if ! dpkg -s libgl1-mesa-dev >/dev/null 2>&1; then
-    echo "libgl1-mesa-dev is not installed. Installing..."
-    sudo apt-get install -y libgl1-mesa-dev
-else
-    echo "libgl1-mesa-dev is already installed."
-fi
+# Check and install required packages
+check_and_install libglfw3
+check_and_install libglfw3-dev
+check_and_install libgl1-mesa-dev
+check_and_install libx11-dev
 
 # Check if XDG_RUNTIME_DIR is set
 if [ -z "$XDG_RUNTIME_DIR" ]; then
@@ -25,6 +26,7 @@ if [ -z "$XDG_RUNTIME_DIR" ]; then
 else
     echo "XDG_RUNTIME_DIR is already set to $XDG_RUNTIME_DIR."
 fi
+
 
 # g++ -o main ./main.cpp CustomPacket.cpp Peer.cpp -lglfw -lGL -pthread
 g++ -o main main.cpp Peer.cpp CustomPacket.cpp \
