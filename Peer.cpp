@@ -219,6 +219,7 @@ void Peer::listenForPackets() {
       std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout << "Received a packet; isconnected: " << var_is_connected <<"\npacket size: " << 
       packet.length<< std::endl;
+      packet.printFlags();
     }
 
     // Sequence for responding to a connection request
