@@ -373,6 +373,10 @@ int main() {
         peer.listenForPackets();
     });
 
+    std::thread processor_thread([&peer]() {
+      peer.processPackets();
+    });
+
     // Start a thread to print received messages
     std::thread message_printer_thread([&peer]() {
 
