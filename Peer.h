@@ -41,6 +41,7 @@ private:
     bool requested_end_transmition = false;
     // bool client_addr_initialized = false; // Track if the client's address is initialized
     uint16_t packet_id = UINT16_MAX;
+    bool connectToPeer_message_send = false;
 
     std::string localIPAddress;
 
@@ -59,6 +60,7 @@ private:
     std::mutex packetsToBeSend_mutex;
     std::mutex checking_file_received;
     std::mutex requested_end_transmition_mutex;
+    std::mutex connectToPeer_message_send_mutex;
 
     // Declare cout_mutex as extern
 

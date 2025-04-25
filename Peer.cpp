@@ -249,12 +249,36 @@ void Peer::listenForPackets() {
         }
         continue;
 
-      } else {
+        //Checking if we received ack for us trying to connect to someone
+      } else if (packet.get_urgent_flag() && packet.get_ack_flag()){
+
+        bool var = false;
         {
+          std::lock_guard<std::mutex> lock(connectToPeer_message_send_mutex);
+          var = this->connectToPeer_message_send;
+        }
+
+        if (var) {
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Connection established with remote peer.\n";
+          }
+          
+          {
+            std::lock_guard<std::mutex> lock(is_connected_mutex);
+            this->is_connected = true;
+          }
+          incrementing_and_checking_packet_id(packet.packet_id);
+        }else {
           std::lock_guard<std::mutex> lock(cout_mutex);
           std::cout << "Unexpected packet received before connection was established. Ignoring.\n\n";
         }
         continue;
+      }else {
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Unexpected packet received before connection was established. Ignoring.\n\n";
+        }
       }
     } else {
 
@@ -821,35 +845,40 @@ void Peer::connectToPeer(const char *remote_ip) {
   sendPacket(start_packet);
 
   {
+    std::lock_guard<std::mutex> lock(connectToPeer_message_send_mutex);
+    this->connectToPeer_message_send = true;
+  }
+
+  {
     std::lock_guard<std::mutex> lock(cout_mutex);
     std::cout << "Sent initial packet with urgent and start_transmission flags.\n";
   }
 
   // Wait for a response packet with urgent and ack flags
   CustomPacket response_packet;
-  while (true) {
-    receivePacket(response_packet);
+  // while (true) {
+  //   receivePacket(response_packet);
 
-    if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "Received acknowledgment packet from the server.\n";
-      incrementing_and_checking_packet_id(response_packet.packet_id);
-      break;
-    } else {
-      std::lock_guard<std::mutex> lock(cout_mutex);
-      std::cout << "?Received a packet, but it does not have the expected flags. Waiting...\n";
-    }
-  }
+  //   if (response_packet.get_urgent_flag() && response_packet.get_ack_flag()) {
+  //     std::lock_guard<std::mutex> lock(cout_mutex);
+  //     std::cout << "Received acknowledgment packet from the server.\n";
+  //     incrementing_and_checking_packet_id(response_packet.packet_id);
+  //     break;
+  //   } else {
+  //     std::lock_guard<std::mutex> lock(cout_mutex);
+  //     std::cout << "?Received a packet, but it does not have the expected flags. Waiting...\n";
+  //   }
+  // }
 
-  {
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "Connection established with remote peer at " << remote_ip << ".\n";
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(cout_mutex);
+  //   std::cout << "Connection established with remote peer at " << remote_ip << ".\n";
+  // }
   
-  {
-    std::lock_guard<std::mutex> lock(is_connected_mutex);
-    this->is_connected = true;
-  }
+  // {
+  //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+  //   this->is_connected = true;
+  // }
 }
 
 //-------------------------------------------------------------------------------------------------------
