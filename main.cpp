@@ -400,11 +400,12 @@ int main() {
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-            for (const auto &msg :peer.messages_received) {
-              std::lock_guard<std::mutex> lock(peer.cout_mutex);
-              // std::lock_guard<std::mutex> lock(peer.adding_msg_received);
-              std::cout<<msg<<std::endl;
-            }
+            chat_messages.push_back(received_message);
+            // for (const auto &msg :peer.messages_received) {
+            //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+            //   // std::lock_guard<std::mutex> lock(peer.adding_msg_received);
+            //   std::cout<<msg<<std::endl;
+            // }
 
             // print_commands_options();
 
