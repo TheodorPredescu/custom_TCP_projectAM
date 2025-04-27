@@ -371,10 +371,6 @@ void renderGUI(Peer& peer) {
         // Back button to disconnect and return to the connection screen
         if (ImGui::Button("Back")) {
             peer.endConnection(); // End the connection
-            {
-                std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
-                peer.is_connected = false; // Set is_connected to false
-            }
             chat_messages.clear(); // Clear chat messages
         }
 

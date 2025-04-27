@@ -212,7 +212,7 @@ void Peer::listenForPackets() {
     bool var_is_connected;
     {
       std::lock_guard<std::mutex> lock(is_connected_mutex);
-      var_is_connected = is_connected;
+      var_is_connected = this->is_connected;
     }
 
     {
