@@ -306,7 +306,7 @@ void renderGUI(Peer& peer) {
             }
 
             // Validate IP address length
-            if (ip_address.length() >= 4 && ip_address.length() <= 15) {
+            if (ip_address.length() >= 7 && ip_address.length() <= 15) {
 
                 {
                   std::lock_guard<std::mutex>lock(peer.cout_mutex);
@@ -328,7 +328,7 @@ void renderGUI(Peer& peer) {
 
                 {
                   std::lock_guard<std::mutex>lock(peer.cout_mutex);
-                  std::cout<<"Invalid ip :(\n";
+                  std::cout<<"Invalid IP :(\n";
                 }
 
                 // Display an error message if the IP address is invalid
@@ -342,7 +342,7 @@ void renderGUI(Peer& peer) {
         ImGui::Begin("Chat Interface", nullptr, ImGuiWindowFlags_NoResize);
 
         // Display chat messages
-        ImGui::BeginChild("ChatWindow", ImVec2(0, ImGui::GetWindowHeight() - 100), true);
+        ImGui::BeginChild("ChatWindow", ImVec2(0, ImGui::GetWindowHeight() - 150), true);
         for (const auto& message : chat_messages) {
             ImGui::TextWrapped("%s", message.c_str());
         }
@@ -356,6 +356,26 @@ void renderGUI(Peer& peer) {
             peer.sendMessage(input_message);
             chat_messages.push_back("You: " + input_message);
             memset(message_buffer, 0, sizeof(message_buffer)); // Clear the input buffer
+        }
+
+        // Input box for file location
+        static char file_buffer[512] = ""; // Buffer for file path input
+        ImGui::InputText("File Path", file_buffer, sizeof(file_buffer));
+        if (ImGui::Button("Send File")) {
+            std::string file_path(file_buffer);
+            peer.sendFile(file_path);
+            chat_messages.push_back("You sent a file: " + file_path);
+            memset(file_buffer, 0, sizeof(file_buffer)); // Clear the input buffer
+        }
+
+        // Back button to disconnect and return to the connection screen
+        if (ImGui::Button("Back")) {
+            peer.endConnection(); // End the connection
+            {
+                std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+                peer.is_connected = false; // Set is_connected to false
+            }
+            chat_messages.clear(); // Clear chat messages
         }
 
         ImGui::End();
