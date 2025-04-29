@@ -290,10 +290,10 @@ bool renderGUI(Peer& peer) {
   }
     if (!var_is_connected) {
 
-        if (exit_exit) {
-          exit_exit = false;
-          return false;
-        }
+        // if (exit_exit) {
+        //   exit_exit = false;
+        //   return false;
+        // }
 
         // Connection screen
         ImGui::Begin("Connect to Peer");
