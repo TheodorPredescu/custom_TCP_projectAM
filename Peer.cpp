@@ -464,12 +464,14 @@ void Peer::processPackets() {
       //End thread on receiving the signal
       {
         std::lock_guard<std::mutex> lock(exiting_mutex);
-        {
-          std::lock_guard<std::mutex> lock(adding_msg_received);
-          messages_received.push_back("Aw12@0986^12luAwCluhWQ123~~``!");
-          messages_received_cv.notify_one();
+        if (exiting){
+          {
+            std::lock_guard<std::mutex> lock(adding_msg_received);
+            messages_received.push_back("Aw12@0986^12luAwCluhWQ123~~``!");
+            messages_received_cv.notify_one();
+          }
+          break;
         }
-        if (exiting) break;
       }
 
       {
