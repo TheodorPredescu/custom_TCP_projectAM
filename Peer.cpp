@@ -414,11 +414,12 @@ void Peer::listenForPackets() {
             packet_vector.push_back(mock_packet);
             packet_cv.notify_one();
           }
-          // std::this_thread::sleep_for(std::chrono::milliseconds(100));
           {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "sended mocking packet";
           }
+
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
           return;
         }
