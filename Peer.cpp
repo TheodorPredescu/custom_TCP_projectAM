@@ -320,17 +320,26 @@ void Peer::listenForPackets() {
           this->is_connected = false;
         }
 
-        // Close the socket
-        close(sock);
-        messages_received_cv.notify_one();
-        {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Socket closed.\n";
-        }
-
         {
           std::lock_guard<std::mutex> lock(exiting_mutex);
           this->exiting = true;
+        }
+
+
+        // Close the socket
+        close(sock);
+
+        //Creating mock packet so that we dont block the processPackets
+        CustomPacket mock_packet;
+        {
+          std::lock_guard<std::mutex> lock(packet_mutex);
+          packet_vector.push_back(mock_packet);
+          packet_cv.notify_one();
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(cout_mutex);
+          std::cout << "Socket closed.Sended mock packet to close the processPackets.\n";
         }
 
         return;
@@ -398,8 +407,18 @@ void Peer::listenForPackets() {
             this->exiting = true;
           }
 
-          messages_received_cv.notify_one();
+          //Creating mock packet so that we dont block the processPackets
+          CustomPacket mock_packet;
+          {
+            std::lock_guard<std::mutex> lock(packet_mutex);
+            packet_vector.push_back(mock_packet);
+            packet_cv.notify_one();
+          }
           // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "sended mocking packet";
+          }
 
           return;
         }
@@ -435,13 +454,6 @@ void Peer::processPackets() {
   
   while (true) {
 
-    //End thread on receiving the signal
-    {
-      std::lock_guard<std::mutex> lock(exiting_mutex);
-    if (exiting) break;
-    }
-
-
     CustomPacket packet;
 
     // Wait for a packet to be available
@@ -452,7 +464,12 @@ void Peer::processPackets() {
       //End thread on receiving the signal
       {
         std::lock_guard<std::mutex> lock(exiting_mutex);
-      if (exiting) break;
+        {
+          std::lock_guard<std::mutex> lock(adding_msg_received);
+          messages_received.push_back("Aw12@0986^12luAwCluhWQ123~~``!");
+          messages_received_cv.notify_one();
+        }
+        if (exiting) break;
       }
 
       {

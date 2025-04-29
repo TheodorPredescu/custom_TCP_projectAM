@@ -263,6 +263,7 @@ void test_peer_class() {
 std::vector<std::string> chat_messages;
 std::string input_message;
 std::string ip_address = "127.0.0.1"; // Default IP address
+bool exit_exit = false;
 
 // Function to initialize Dear ImGui
 void initImGui(GLFWwindow* window) {
@@ -288,12 +289,18 @@ bool renderGUI(Peer& peer) {
     var_is_connected = peer.is_connected;
   }
     if (!var_is_connected) {
+
+        if (exit_exit) {
+          exit_exit = false;
+          return false;
+        }
+
         // Connection screen
         ImGui::Begin("Connect to Peer");
         ImGui::Text("Enter the IP address of the peer you want to connect to:");
 
         // Input box for IP address
-        static char ip_buffer[16] = "127.0.0.1"; // Buffer for IP address (max length 15 + null terminator)
+        static char ip_buffer[16] = "192.168.0.114"; // Buffer for IP address (max length 15 + null terminator)
         ImGui::InputText("IP Address", ip_buffer, sizeof(ip_buffer));
 
         // Connect button
@@ -338,6 +345,9 @@ bool renderGUI(Peer& peer) {
 
         ImGui::End();
     } else {
+
+        exit_exit = true;
+
         // Chat screen
         ImGui::Begin("Chat Interface", nullptr, ImGuiWindowFlags_NoResize);
 
@@ -377,12 +387,48 @@ bool renderGUI(Peer& peer) {
 
         ImGui::End();
     }
+
+    bool is_con = false;
+    {
+      std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+      is_con = peer.is_connected;
+    }
+
+    bool exitin = false;
+    {
+      std::lock_guard<std::mutex> lock(peer.exiting_mutex);
+      exitin = peer.exiting;
+    }
+
+    // {
+    //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+    //   std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
+    // }
+
+    {
+      if (!is_con && exitin) {
+
+        {
+          std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+          peer.is_connected = false;
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(peer.exiting_mutex);
+          peer.exiting = false;
+        }
+
+        return false;
+      }
+    }
     return true;
 }
 
 int main() {
     
   while (true){
+    {
+
       // Initialize Peer
       Peer peer;
 
@@ -406,12 +452,9 @@ int main() {
           //   var_is_connected = this->is_connected;
           // }
           while (true) {
-              
-            {
-              std::lock_guard<std::mutex> lock(peer.exiting_mutex);
-              if (peer.exiting) break;
-            }
-              std::string received_message = peer.get_messages_received();
+            std::string received_message = peer.get_messages_received();
+
+            if (received_message == "Aw12@0986^12luAwCluhWQ123~~``!") break;
 
               {
                 std::lock_guard<std::mutex> lock(peer.cout_mutex);
@@ -486,13 +529,24 @@ int main() {
       // Wait for the listener thread to finish
       if (listener_thread.joinable()) {
           listener_thread.join();
+          std::cout << "[Thread Ended]: Listener thread has finished.\n";
+      }
+
+      // Wait for the processor thread to finish
+      if (processor_thread.joinable()) {
+          processor_thread.join();
+          std::cout << "[Thread Ended]: Processor thread has finished.\n";
       }
 
       // Wait for the message printer thread to finish
       if (message_printer_thread.joinable()) {
-          message_printer_thread.detach(); // Detach the thread to allow it to exit independently
+          message_printer_thread.join();
+          std::cout << "[Thread Ended]: Message printer thread has finished.\n";
       }
 
+      std::cout << "End";
+
+    }
   }
     return 0;
 }
