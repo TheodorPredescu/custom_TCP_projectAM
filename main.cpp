@@ -428,6 +428,7 @@ bool renderGUI(Peer& peer) {
     }
 
     if (!is_con && exitin) {
+      chat_messages.clear(); // Clear chat messages
       return false;
     }
 
