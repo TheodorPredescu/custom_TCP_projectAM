@@ -419,6 +419,11 @@ void Peer::listenForPackets() {
             std::cout << "sended mocking packet";
           }
 
+        {
+          std::lock_guard<std::mutex> lock(requested_end_transmition_mutex);
+          this->requested_end_transmition = false;
+        }
+
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
           return;
