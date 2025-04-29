@@ -281,7 +281,7 @@ void cleanupImGui() {
 }
 
 // Function to render the GUI
-void renderGUI(Peer& peer) {
+bool renderGUI(Peer& peer) {
   bool var_is_connected;
   {
     std::lock_guard<std::mutex>lock(peer.is_connected_mutex);
@@ -372,122 +372,127 @@ void renderGUI(Peer& peer) {
         if (ImGui::Button("Back")) {
             peer.endConnection(); // End the connection
             chat_messages.clear(); // Clear chat messages
+            return false;
         }
 
         ImGui::End();
     }
+    return true;
 }
 
 int main() {
-    // Initialize Peer
-    Peer peer;
+    
+  while (true){
+      // Initialize Peer
+      Peer peer;
 
-    peer.startPeer();
+      peer.startPeer();
 
-    // Start a thread to listen for incoming packets
-    std::thread listener_thread([&peer]() {
-        peer.listenForPackets();
-    });
+      // Start a thread to listen for incoming packets
+      std::thread listener_thread([&peer]() {
+          peer.listenForPackets();
+      });
 
-    std::thread processor_thread([&peer]() {
-      peer.processPackets();
-    });
+      std::thread processor_thread([&peer]() {
+        peer.processPackets();
+      });
 
-    // Start a thread to print received messages
-    std::thread message_printer_thread([&peer]() {
+      // Start a thread to print received messages
+      std::thread message_printer_thread([&peer]() {
 
-        // bool var_is_connected;
-        // {
-        //   std::lock_guard<std::mutex> lock(is_connected_mutex);
-        //   var_is_connected = this->is_connected;
-        // }
-        while (true) {
-            
-          {
-            std::lock_guard<std::mutex> lock(peer.exiting_mutex);
-            if (peer.exiting) break;
-          }
-            std::string received_message = peer.get_messages_received();
-
-            {
-              std::lock_guard<std::mutex> lock(peer.cout_mutex);
-              std::cout << "\n[Received Message]: " << received_message << "\n\n";
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-            chat_messages.push_back(received_message);
-            // for (const auto &msg :peer.messages_received) {
-            //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
-            //   // std::lock_guard<std::mutex> lock(peer.adding_msg_received);
-            //   std::cout<<msg<<std::endl;
-            // }
-
-            // print_commands_options();
-
+          // bool var_is_connected;
           // {
           //   std::lock_guard<std::mutex> lock(is_connected_mutex);
           //   var_is_connected = this->is_connected;
           // }
-        }
-    });
+          while (true) {
+              
+            {
+              std::lock_guard<std::mutex> lock(peer.exiting_mutex);
+              if (peer.exiting) break;
+            }
+              std::string received_message = peer.get_messages_received();
 
-    // Initialize GLFW
-    if (!glfwInit()) {
-        return -1;
-    }
+              {
+                std::lock_guard<std::mutex> lock(peer.cout_mutex);
+                std::cout << "\n[Received Message]: " << received_message << "\n\n";
+              }
 
-    // Create a windowed mode window and its OpenGL context
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Peer Chat", NULL, NULL);
-    if (!window) {
-        glfwTerminate();
-        return -1;
-    }
+              std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+              chat_messages.push_back(received_message);
+              // for (const auto &msg :peer.messages_received) {
+              //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+              //   // std::lock_guard<std::mutex> lock(peer.adding_msg_received);
+              //   std::cout<<msg<<std::endl;
+              // }
 
-    // Initialize Dear ImGui
-    initImGui(window);
+              // print_commands_options();
 
-    // Main loop
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+            // {
+            //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+            //   var_is_connected = this->is_connected;
+            // }
+          }
+      });
 
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+      // Initialize GLFW
+      if (!glfwInit()) {
+          return -1;
+      }
 
-        // Render the GUI
-        renderGUI(peer);
+      // Create a windowed mode window and its OpenGL context
+      GLFWwindow* window = glfwCreateWindow(800, 600, "Peer Chat", NULL, NULL);
+      if (!window) {
+          glfwTerminate();
+          return -1;
+      }
 
-        // Rendering
-        ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+      glfwMakeContextCurrent(window);
+      glfwSwapInterval(1);
 
-        glfwSwapBuffers(window);
-    }
+      // Initialize Dear ImGui
+      initImGui(window);
 
-    // Cleanup
-    cleanupImGui();
-    glfwDestroyWindow(window);
-    glfwTerminate();
+      // Main loop
+      while (!glfwWindowShouldClose(window)) {
+          glfwPollEvents();
 
-    // Wait for the listener thread to finish
-    if (listener_thread.joinable()) {
-        listener_thread.join();
-    }
+          // Start the Dear ImGui frame
+          ImGui_ImplOpenGL3_NewFrame();
+          ImGui_ImplGlfw_NewFrame();
+          ImGui::NewFrame();
 
-    // Wait for the message printer thread to finish
-    if (message_printer_thread.joinable()) {
-        message_printer_thread.detach(); // Detach the thread to allow it to exit independently
-    }
+          // Render the GUI
+          if (!renderGUI(peer)) break;
 
+          // Rendering
+          ImGui::Render();
+          int display_w, display_h;
+          glfwGetFramebufferSize(window, &display_w, &display_h);
+          glViewport(0, 0, display_w, display_h);
+          glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+          glClear(GL_COLOR_BUFFER_BIT);
+          ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+          glfwSwapBuffers(window);
+      }
+
+      // Cleanup
+      cleanupImGui();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+
+      // Wait for the listener thread to finish
+      if (listener_thread.joinable()) {
+          listener_thread.join();
+      }
+
+      // Wait for the message printer thread to finish
+      if (message_printer_thread.joinable()) {
+          message_printer_thread.detach(); // Detach the thread to allow it to exit independently
+      }
+
+  }
     return 0;
 }
