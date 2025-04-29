@@ -428,7 +428,7 @@ bool renderGUI(Peer& peer) {
     }
 
     if (!is_con && exitin) {
-      return false
+      return false;
     }
 
     return true;
