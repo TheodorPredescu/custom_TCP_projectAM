@@ -475,6 +475,10 @@ void Peer::processPackets() {
             std::lock_guard<std::mutex> lock(adding_msg_received);
             messages_received.push_back("Aw12@0986^12luAwCluhWQ123~~``!");
             messages_received_cv.notify_one();
+            {
+              std::lock_guard<std::mutex> lock(cout_mutex);
+              std::cout<<"Received mocking packet. Sending wierd message.\n";
+            }
           }
           break;
         }
