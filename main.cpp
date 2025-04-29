@@ -427,6 +427,10 @@ bool renderGUI(Peer& peer) {
       std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
     }
 
+    if (!is_con && exitin) {
+      return false
+    }
+
     return true;
 }
 
@@ -460,7 +464,13 @@ int main() {
           while (true) {
             std::string received_message = peer.get_messages_received();
 
-            if (received_message == "Aw12@0986^12luAwCluhWQ123~~``!") break;
+            if (received_message == "Aw12@0986^12luAwCluhWQ123~~``!") {
+              {
+                std::lock_guard<std::mutex> lock(peer.cout_mutex);
+                std::cout << "Received wierd message\n";
+              }
+              break;
+            }
 
               {
                 std::lock_guard<std::mutex> lock(peer.cout_mutex);
