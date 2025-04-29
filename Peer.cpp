@@ -391,11 +391,6 @@ void Peer::listenForPackets() {
             std::cout << "Connection successfully ended.\n";
           }
 
-          {
-            std::lock_guard<std::mutex> lock(is_connected_mutex);
-            this->is_connected = false;
-          }
-
           // Close the socket
           close(sock);
           {

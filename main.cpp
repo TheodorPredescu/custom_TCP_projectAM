@@ -382,6 +382,11 @@ bool renderGUI(Peer& peer) {
         if (ImGui::Button("Back")) {
             peer.endConnection(); // End the connection
             chat_messages.clear(); // Clear chat messages
+          {
+            std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+            peer.is_connected = false;
+          }
+
     bool is_con = false;
     {
       std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
