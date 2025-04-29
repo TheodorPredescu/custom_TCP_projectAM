@@ -269,6 +269,11 @@ void Peer::listenForPackets() {
             this->is_connected = true;
           }
           incrementing_and_checking_packet_id(packet.packet_id);
+
+          {
+            std::lock_guard<std::mutex> lock(connectToPeer_message_send_mutex);
+            this->connectToPeer_message_send = false;
+          }
         }else {
           std::lock_guard<std::mutex> lock(cout_mutex);
           std::cout << "Unexpected packet received before connection was established. Ignoring.\n\n";
