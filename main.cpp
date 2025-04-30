@@ -388,21 +388,21 @@ bool renderGUI(Peer& peer) {
             peer.is_connected = false;
           }
 
-    bool is_con = false;
-    {
-      std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
-      is_con = peer.is_connected;
-    }
+    // bool is_con = false;
+    // {
+    //   std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+    //   is_con = peer.is_connected;
+    // }
 
-    bool exitin = false;
-    {
-      std::lock_guard<std::mutex> lock(peer.exiting_mutex);
-      exitin = peer.exiting;
-    }
-    {
-      std::lock_guard<std::mutex> lock(peer.cout_mutex);
-      std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
-    }
+    // bool exitin = false;
+    // {
+    //   std::lock_guard<std::mutex> lock(peer.exiting_mutex);
+    //   exitin = peer.exiting;
+    // }
+    // {
+    //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+    //   std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
+    // }
 
             return false;
         }
@@ -422,10 +422,10 @@ bool renderGUI(Peer& peer) {
       exitin = peer.exiting;
     }
 
-    {
-      std::lock_guard<std::mutex> lock(peer.cout_mutex);
-      std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
-    }
+    // {
+    //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+    //   std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
+    // }
 
     if (!is_con && exitin) {
       chat_messages.clear(); // Clear chat messages
