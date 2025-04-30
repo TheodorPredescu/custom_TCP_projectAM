@@ -1459,6 +1459,7 @@ void Peer::ensureDataFolderExists() {
 std::string Peer::getLocalIPAddress() const {
     struct ifaddrs *ifaddr, *ifa;
     char host[NI_MAXHOST];
+    std::vector<std::string> ip_addresses;
 
     if (getifaddrs(&ifaddr) == -1) {
         perror("getifaddrs");
@@ -1472,13 +1473,42 @@ std::string Peer::getLocalIPAddress() const {
             if (getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in),
                             host, NI_MAXHOST, nullptr, 0, NI_NUMERICHOST) == 0) {
                 if (std::string(ifa->ifa_name) != "lo") { // Skip loopback interface
-                    freeifaddrs(ifaddr);
-                    return std::string(host);
+                    ip_addresses.push_back(std::string(host));
                 }
             }
         }
     }
 
     freeifaddrs(ifaddr);
-    return "";
+
+    if (ip_addresses.empty()) {
+        std::cerr << "No available IP addresses found.\n";
+        return "";
+    }
+
+    if (ip_addresses.size() == 1) {
+      return ip_addresses[0];
+    }
+
+    // Display the available IP addresses and let the user choose
+    std::cout << "Available IP addresses:\n";
+    for (size_t i = 0; i < ip_addresses.size(); ++i) {
+        std::cout << i + 1 << ". " << ip_addresses[i] << "\n";
+    }
+
+    int choice = 0;
+    while (true) {
+        std::cout << "Enter the number corresponding to the IP address you want to use: ";
+        std::cin >> choice;
+
+        if (std::cin.fail() || choice < 1 || choice > static_cast<int>(ip_addresses.size())) {
+            std::cin.clear(); // Clear the error flag
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Discard invalid input
+            std::cerr << "Invalid choice. Please try again.\n";
+        } else {
+            break;
+        }
+    }
+
+    return ip_addresses[choice - 1];
 }
