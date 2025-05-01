@@ -853,6 +853,7 @@ void Peer::sendMessage(const std::string &msg) {
   add_packets_to_history(packet_list);
   
   bool check = false;
+  int i = 3;
 
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
@@ -869,6 +870,8 @@ void Peer::sendMessage(const std::string &msg) {
     //   check = true;
     // }else {
     // }
+    i --;
+    if (i == 0) continue;
     sendPacket(packet);
   }
 }
@@ -881,7 +884,6 @@ void Peer::sendFile(const std::string &file_path) {
   add_packets_to_history(packet_list);
   
   bool check = false;
-  int i = 3;
 
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
@@ -900,8 +902,6 @@ void Peer::sendFile(const std::string &file_path) {
     //   check = true;
     // }else {
     // }
-    i = i - 1;
-    if (i == 0) continue;
     
     sendPacket(packet);
   }
