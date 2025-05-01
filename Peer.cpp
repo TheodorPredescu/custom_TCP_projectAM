@@ -452,7 +452,7 @@ void Peer::processPackets() {
   std::map<uint16_t, std::string> long_message;
   std::string msg = "";
   u_int16_t start = UINT16_MAX, end = UINT16_MAX;
-  std::vector<uint16_t> missing_packets;
+  std::vector<CustomPacket> procesed_packets_memory;
 
   std::string file_name, file_extension;
   size_t file_size = 0;
@@ -527,29 +527,38 @@ void Peer::processPackets() {
       adding_messages_in_received_messages(msg);
       
 
+      // TODO: I need to add logic for dealing with this !! If the error message is lost, 
+      // the message will remain incomplete; it will not send it twice
+      
+      if (!missing_packets.empty()) {
+
+      {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Not all packets are received!\tSending the missing packets";
+      }
+
+        for (const auto &it : missing_packets) {
+          sendPacket(create_error_packet(it));
+          {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Sending request for resend for: " << static_cast<int>(it);
+          }
+        }
+        {
+          std::lock_guard<std::mutex> lock(packet_mutex);
+          packet_vector.insert(packet_vector.begin(), procesed_packets_memory.begin(), procesed_packets_memory.end());
+        }
+        procesed_packets_memory.clear();
+        missing_packets.clear();
+        packet_cv.notify_one();
+
+        continue;
+      }
+
       // If i receive a packet that its not in the interval precizated
       if (start != UINT16_MAX && end != UINT16_MAX && 
          !(start < packet.packet_id && packet.packet_id <= start + serialise_packet_size)) {
 
-        {
-          std::lock_guard<std::mutex> lock(cout_mutex);
-          std::cout << "Not all packets are received!\tSending the missing packets";
-        }
-
-        // TODO: I need to add logic for dealing with this !! If the error message is lost, 
-        // the message will remain incomplete; it will not send it twice
-        if (!missing_packets.empty()) {
-          for (const auto &it : missing_packets) {
-            // sendPacket(create_error_packet(it));
-            {
-              std::lock_guard<std::mutex> lock(cout_mutex);
-              std::cout << "Sending request for resend for: " << static_cast<int>(it);
-            }
-          }
-          missing_packets.clear();
-
-          continue;
-        }
       }
     }else {
 
@@ -558,6 +567,8 @@ void Peer::processPackets() {
         std::lock_guard<std::mutex> lock(cout_mutex);
         std::cout<< "Got to the serialize section.\n";
       }
+
+      procesed_packets_memory.push_back(packet);
 
       //-----------------Text message-------------------
       if (packet.getMsgType() == 0) {
@@ -624,7 +635,20 @@ void Peer::processPackets() {
               std::lock_guard<std::mutex> lock(cout_mutex);
               std::cout<< "There are missing packets!\n";
             }
-            throw missing_packets;
+            {
+              std::lock_guard<std::mutex> lock(packet_mutex);
+              packet_vector.insert(packet_vector.begin(), procesed_packets_memory.begin(), procesed_packets_memory.end());
+            }
+
+            for (uint16_t val : missing_packets) {
+              sendPacket(create_error_packet(val));
+            }
+            procesed_packets_memory.clear();
+            packet_cv.notify_one();
+
+            missing_packets.clear();
+
+            // throw missing_packets;
           }
 
           long_message.clear();
@@ -661,6 +685,13 @@ void Peer::processPackets() {
 
           incrementing_and_checking_packet_id(start);
 
+
+          //I will add all the packets that are needed to get in in missing packets and I will remove them 
+          // from the vector when they arrive
+          for (uint16_t val = start + 1; val <= start + serialise_packet_size; val++) {
+            missing_packets.push_back(val);
+          }
+
           continue;
         }else if (packet.get_start_transmition_flag()){
           {
@@ -671,6 +702,18 @@ void Peer::processPackets() {
           continue;
 
         }
+
+        for (uint16_t it : missing_packets) {
+          if (it == packet.packet_id) missing_packets.erase(missing_packets.begin() + it);
+        }
+        // auto it = std::find(missing_packets.begin(), missing_packets.end(), packet.packet_id);
+        // if (it != missing_packets.end()) {
+        //   missing_packets.erase(it);
+        // }else {
+        //   std::lock_guard <std::mutex> lock(cout_mutex);
+        //   std::cout<<"We tried to delete a packet from missing packets that was not in the range\n\n";
+        // }
+
         // Process metadata packet; First packet after the size packet is the one with metadata
         if (file_name.empty()) {
             std::string metadata(packet.payload, packet.length);
@@ -713,7 +756,7 @@ void Peer::processPackets() {
         }
 
           bool metadata_check = true;
-          for (const auto &pair : long_message) {
+          for (auto it = long_message.begin(); it!= long_message.end(); ++it) {
             if (metadata_check) {
               {
                 std::lock_guard<std::mutex> lock(cout_mutex);
@@ -722,8 +765,33 @@ void Peer::processPackets() {
               metadata_check = false;
               continue;
             }
-            file_content << pair.second;
+
+            std::string content = it->second;
+
+            if (it == std::prev(long_message.end())) {
+              content.pop_back();
+            }
+
+            file_content << content;
           }
+          // for (auto &pair : long_message) {
+          //   if (metadata_check) {
+          //     {
+          //       std::lock_guard<std::mutex> lock(cout_mutex);
+          //       std::cout<<"Ignorring metadata\n";
+          //     }
+          //     metadata_check = false;
+          //     continue;
+          //   }
+
+          //   if (pair == std::prev(long_message.end())) {
+          //     std::string content = pair.second;
+          //     content = content.pop_back();
+          //     file_content << content;
+          //     break;
+          //   }
+          //   file_content << pair.second;
+          // }
 
           // Write the file to disk
           ensureDataFolderExists();
@@ -813,6 +881,7 @@ void Peer::sendFile(const std::string &file_path) {
   add_packets_to_history(packet_list);
   
   bool check = false;
+  int i = 3;
 
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
@@ -831,6 +900,9 @@ void Peer::sendFile(const std::string &file_path) {
     //   check = true;
     // }else {
     // }
+    i = i - 1;
+    if (i == 0) continue;
+    
     sendPacket(packet);
   }
 }
@@ -1040,8 +1112,12 @@ CustomPacket Peer::create_start_packet(const int &size, const bool &isFile) {
 }
 
 //-------------------------------------------------------------------------------------------------------
-CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) const {
+CustomPacket Peer::create_error_packet(const uint16_t &missing_packet_id) {
 
+  {
+    std::lock_guard <std::mutex> lock(cout_mutex);
+    std::cout <<"Creating error packet with id: "<<static_cast<int>(missing_packet_id)<< "\n";
+  }
   // Create the acknowledgment packet
   CustomPacket error_packet;
   

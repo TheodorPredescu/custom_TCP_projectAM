@@ -42,6 +42,7 @@ private:
     // bool client_addr_initialized = false; // Track if the client's address is initialized
     uint16_t packet_id = UINT16_MAX;
     bool connectToPeer_message_send = false;
+    std::vector<uint16_t> missing_packets;
 
     std::string localIPAddress;
 
@@ -82,7 +83,7 @@ private:
     void sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &dest_addr);
     void incrementing_and_checking_packet_id(const uint16_t &idpacket);
     CustomPacket create_ack_packet();
-    CustomPacket create_error_packet(const uint16_t &missing_packet_id) const;
+    CustomPacket create_error_packet(const uint16_t &missing_packet_id);
     CustomPacket create_start_packet(const int &size, const bool &isFile = false);
 
     //For memoring the packets that will be send
