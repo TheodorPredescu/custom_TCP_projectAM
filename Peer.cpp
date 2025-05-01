@@ -192,7 +192,6 @@ void Peer::listenForPackets() {
     {
       std::lock_guard<std::mutex> lock(cout_mutex);
       std::cout<<"Received a packet\n";
-
     }
      // Validate the packet
     if (packet.calculateChecksum() != packet.checksum) {
@@ -203,10 +202,6 @@ void Peer::listenForPackets() {
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
-    }else {
-      // std::lock_guard<std::mutex> lock(cout_mutex);
-      // std::cout<<"Content: " << std::string(packet.payload, packet.length);
-      // packet.printFlags();
     }
 
     bool var_is_connected;
@@ -526,6 +521,13 @@ void Peer::processPackets() {
       //For showing in interface
       adding_messages_in_received_messages(msg);
       
+      incrementing_and_checking_packet_id(packet.packet_id);
+
+      while (packet_id < packet.packet_id) {
+        missing_packets.push_back(packet_id);
+        incrementing_and_checking_packet_id(packet.packet_id);
+      }
+      
 
       // TODO: I need to add logic for dealing with this !! If the error message is lost, 
       // the message will remain incomplete; it will not send it twice
@@ -555,11 +557,6 @@ void Peer::processPackets() {
         continue;
       }
 
-      // If i receive a packet that its not in the interval precizated
-      if (start != UINT16_MAX && end != UINT16_MAX && 
-         !(start < packet.packet_id && packet.packet_id <= start + serialise_packet_size)) {
-
-      }
     }else {
 
       // ------------serialise section--------------------------
@@ -861,7 +858,6 @@ void Peer::sendMessage(const std::string &msg) {
   add_packets_to_history(packet_list);
   
   bool check = false;
-  int i = 3;
 
   for (const auto &pair : packet_list) {
     const CustomPacket &packet = pair.second;
@@ -878,8 +874,6 @@ void Peer::sendMessage(const std::string &msg) {
     //   check = true;
     // }else {
     // }
-    i --;
-    if (i == 0) continue;
     sendPacket(packet);
   }
 }
@@ -1163,11 +1157,11 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 
   if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
-    packet_id = packet_id_received;
+    packet_id +=2;
     CustomPacket::incrementPacketId(packet_id);
   } else {
-    // std::lock_guard<std::mutex> lock(cout_mutex);
-    // std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout<< "\tReceived a packet with ID lower then the current one! Keeping current id\n";
   }
 }
 
