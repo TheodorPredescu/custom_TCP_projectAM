@@ -661,6 +661,7 @@ void Peer::processPackets() {
           start = UINT16_MAX;
           serialise_packet_size = 0;
           procesed_packets = 0;
+          procesed_packets_memory.clear();
 
           if (packet.getMsgType() == 1){
             std::lock_guard<std::mutex> lock(cout_mutex);
@@ -828,6 +829,7 @@ void Peer::processPackets() {
           file_size = 0;
           serialise_packet_size = 0;
           procesed_packets = 0;
+          procesed_packets_memory.clear();
 
           // // Reprint the commands
           // {
