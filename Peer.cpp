@@ -73,6 +73,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
       std::cerr << "Error sending packet with ID " << packet.packet_id << "\n" << bytes_sent << std::endl;
     } else {
       std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
+      incrementing_and_checking_packet_id(packet_id + 1);
     }
   }
 }
@@ -1155,7 +1156,7 @@ void Peer::add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet
 }
 
 //-------------------------------------------------------------------------------------------------------
-void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_received) {
+void Peer::incrementing_and_checking_packet_id(const uint16_t packet_id_received) {
 
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 

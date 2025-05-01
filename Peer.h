@@ -81,7 +81,7 @@ private:
 
     //new debugging method
     void sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &dest_addr);
-    void incrementing_and_checking_packet_id(const uint16_t &idpacket);
+    void incrementing_and_checking_packet_id(const uint16_t idpacket);
     CustomPacket create_ack_packet();
     CustomPacket create_error_packet(const uint16_t &missing_packet_id);
     CustomPacket create_start_packet(const int &size, const bool &isFile = false);
