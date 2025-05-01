@@ -524,6 +524,7 @@ void Peer::processPackets() {
       adding_messages_in_received_messages(msg);
       
       incrementing_and_checking_packet_id(packet.packet_id);
+      incrementing_and_checking_packet_id(packet.packet_id);
 
       while (packet_id <= packet.packet_id) {
         missing_packets.push_back(packet_id);
