@@ -40,7 +40,7 @@ private:
     int port=8081;
     bool requested_end_transmition = false;
     // bool client_addr_initialized = false; // Track if the client's address is initialized
-    uint16_t packet_id = UINT16_MAX;
+    uint16_t packet_id = 0;
     bool connectToPeer_message_send = false;
     std::vector<uint16_t> missing_packets;
 
