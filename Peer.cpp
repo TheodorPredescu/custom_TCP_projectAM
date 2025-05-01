@@ -584,6 +584,10 @@ void Peer::processPackets() {
 
           incrementing_and_checking_packet_id(start);
 
+          for (uint16_t val = start + 1; val <= start + serialise_packet_size; val++) {
+            missing_packets.push_back(val);
+          }
+
           continue;
         }else if (packet.get_start_transmition_flag()){
           {
@@ -593,6 +597,10 @@ void Peer::processPackets() {
 
           continue;
 
+        }
+
+        for (uint16_t it : missing_packets) {
+          if (it == packet.packet_id) missing_packets.erase(missing_packets.begin() + it);
         }
 
         {
@@ -626,30 +634,30 @@ void Peer::processPackets() {
                 std::lock_guard<std::mutex> lock(cout_mutex);
                 std::cout<< "Missing packet: " << current_packet_id << std::endl;
               }
-              missing_packets.push_back(current_packet_id);
+              // missing_packets.push_back(current_packet_id);
             }
           }
 
-          if (!missing_packets.empty()) {
-            {
-              std::lock_guard<std::mutex> lock(cout_mutex);
-              std::cout<< "There are missing packets!\n";
-            }
-            {
-              std::lock_guard<std::mutex> lock(packet_mutex);
-              packet_vector.insert(packet_vector.begin(), procesed_packets_memory.begin(), procesed_packets_memory.end());
-            }
+          // if (!missing_packets.empty()) {
+          //   {
+          //     std::lock_guard<std::mutex> lock(cout_mutex);
+          //     std::cout<< "There are missing packets!\n";
+          //   }
+          //   {
+          //     std::lock_guard<std::mutex> lock(packet_mutex);
+          //     packet_vector.insert(packet_vector.begin(), procesed_packets_memory.begin(), procesed_packets_memory.end());
+          //   }
 
-            for (uint16_t val : missing_packets) {
-              sendPacket(create_error_packet(val));
-            }
-            procesed_packets_memory.clear();
-            packet_cv.notify_one();
+          //   for (uint16_t val : missing_packets) {
+          //     sendPacket(create_error_packet(val));
+          //   }
+          //   procesed_packets_memory.clear();
+          //   packet_cv.notify_one();
 
-            missing_packets.clear();
+          //   missing_packets.clear();
 
-            // throw missing_packets;
-          }
+          //   // throw missing_packets;
+          // }
 
           long_message.clear();
           start = UINT16_MAX;

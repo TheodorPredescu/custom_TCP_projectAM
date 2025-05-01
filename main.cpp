@@ -359,10 +359,16 @@ bool renderGUI(Peer& peer) {
         ImGui::EndChild();
 
         // Input box for sending messages
-        static std::string message_buffer;
+        static std::string message_buffer; // Use std::string for dynamic allocation
+        char input_buffer[1024];           // Temporary buffer for ImGui input
 
-        if (ImGui::InputText("Message", &message_buffer)) {
-            // Input is automatically updated in message_buffer
+        // Copy the current content of message_buffer to input_buffer
+        strncpy(input_buffer, message_buffer.c_str(), sizeof(input_buffer));
+        input_buffer[sizeof(input_buffer) - 1] = '\0'; // Ensure null termination
+
+        if (ImGui::InputText("Message", input_buffer, sizeof(input_buffer))) {
+            // Update message_buffer with the new input
+            message_buffer = input_buffer;
         }
 
         if (ImGui::Button("Send")) {
