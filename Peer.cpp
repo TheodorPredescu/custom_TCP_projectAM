@@ -31,6 +31,7 @@
 // it will then remain in the Peer class (it is a private variable)
 // gets a package and sends it to the socket sock
 void Peer::sendPacket(const CustomPacket &packet) { 
+
   {
 
   // Debug: Print the destination address
@@ -72,6 +73,8 @@ void Peer::sendPacket(const CustomPacket &packet) {
       std::cerr << "Error sending packet with ID " << packet.packet_id << "\n" << bytes_sent << std::endl;
     } else {
       std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
+      incrementing_and_checking_packet_id(packet.packet_id);
+
     }
   }
 }
@@ -523,7 +526,7 @@ void Peer::processPackets() {
       
       incrementing_and_checking_packet_id(packet.packet_id);
 
-      while (packet_id < packet.packet_id) {
+      while (packet_id <= packet.packet_id) {
         missing_packets.push_back(packet_id);
         incrementing_and_checking_packet_id(packet.packet_id);
       }
@@ -1156,7 +1159,7 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
 
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 
-  if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
+  if (packet_id <= packet_id_received) {
     packet_id ++;
     CustomPacket::incrementPacketId(packet_id);
   } else {
