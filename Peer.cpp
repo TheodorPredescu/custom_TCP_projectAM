@@ -73,7 +73,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
       std::cerr << "Error sending packet with ID " << packet.packet_id << "\n" << bytes_sent << std::endl;
     } else {
       std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
-      incrementing_and_checking_packet_id(packet_id + 1);
+      incrementing_and_checking_packet_id(packet.packet_id);
     }
   }
 }
