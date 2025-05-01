@@ -598,8 +598,12 @@ void Peer::processPackets() {
 
         }
 
-        for (uint16_t it : missing_packets) {
-          if (it == packet.packet_id) missing_packets.erase(missing_packets.begin() + it);
+        for (auto it = missing_packets.begin(); it != missing_packets.end(); ) {
+            if (*it == packet.packet_id) {
+                it = missing_packets.erase(it); // Erase returns the next iterator
+            } else {
+                ++it; // Increment the iterator only if no element is erased
+            }
         }
 
         {
@@ -696,8 +700,12 @@ void Peer::processPackets() {
 
           //I will add all the packets that are needed to get in in missing packets and I will remove them 
           // from the vector when they arrive
-          for (uint16_t val = start + 1; val <= start + serialise_packet_size; val++) {
-            missing_packets.push_back(val);
+          for (auto it = missing_packets.begin(); it != missing_packets.end(); ) {
+              if (*it == packet.packet_id) {
+                  it = missing_packets.erase(it); // Erase returns the next iterator
+              } else {
+                  ++it; // Increment the iterator only if no element is erased
+              }
           }
 
           continue;
