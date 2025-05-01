@@ -524,9 +524,8 @@ void Peer::processPackets() {
       adding_messages_in_received_messages(msg);
       
       incrementing_and_checking_packet_id(packet.packet_id);
-      incrementing_and_checking_packet_id(packet.packet_id);
 
-      while (packet_id <= packet.packet_id) {
+      while (packet_id < packet.packet_id) {
         missing_packets.push_back(packet_id);
         incrementing_and_checking_packet_id(packet.packet_id);
       }
@@ -1161,7 +1160,7 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t packet_id_received
 
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 
-  if (this->packet_id <= packet_id_received) {
+  if (this->packet_id < packet_id_received) {
     CustomPacket::incrementPacketId(packet_id);
   } else {
     std::lock_guard<std::mutex> lock(cout_mutex);
