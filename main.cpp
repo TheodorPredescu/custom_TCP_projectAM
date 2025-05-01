@@ -359,13 +359,18 @@ bool renderGUI(Peer& peer) {
         ImGui::EndChild();
 
         // Input box for sending messages
-        static char message_buffer[512] = ""; // Buffer for message input
-        ImGui::InputText("Message", message_buffer, sizeof(message_buffer));
+        static std::string message_buffer;
+
+        if (ImGui::InputText("Message", &message_buffer)) {
+            // Input is automatically updated in message_buffer
+        }
+
         if (ImGui::Button("Send")) {
-            std::string input_message(message_buffer);
-            peer.sendMessage(input_message);
-            chat_messages.push_back("You: " + input_message);
-            memset(message_buffer, 0, sizeof(message_buffer)); // Clear the input buffer
+            if (!message_buffer.empty()) {
+                peer.sendMessage(message_buffer); // Send the message
+                chat_messages.push_back("You: " + message_buffer); // Add to chat history
+                message_buffer.clear(); // Clear the input buffer
+            }
         }
 
         // Input box for file location
