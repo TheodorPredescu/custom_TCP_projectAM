@@ -1157,7 +1157,7 @@ void Peer::incrementing_and_checking_packet_id(const uint16_t &packet_id_receive
   std::lock_guard<std::mutex> lock(packet_id_mutex);
 
   if (packet_id < packet_id_received || packet_id == UINT16_MAX) {
-    packet_id +=2;
+    packet_id ++;
     CustomPacket::incrementPacketId(packet_id);
   } else {
     std::lock_guard<std::mutex> lock(cout_mutex);
