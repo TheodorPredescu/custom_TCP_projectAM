@@ -64,6 +64,7 @@ void Peer::sendPacket(const CustomPacket &packet) {
   // Copy the payload (CustomPacket) into the buffer after the IP header
   packet.serialize(buffer + sizeof(struct iphdr));
   
+  incrementing_and_checking_packet_id(packet.packet_id);
   ssize_t bytes_sent = sendto(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
   {
@@ -73,7 +74,6 @@ void Peer::sendPacket(const CustomPacket &packet) {
       std::cerr << "Error sending packet with ID " << packet.packet_id << "\n" << bytes_sent << std::endl;
     } else {
       std::cout << "Packet with ID " << packet.packet_id << " sent successfully.\n";
-      incrementing_and_checking_packet_id(packet.packet_id);
     }
   }
 }
@@ -962,7 +962,7 @@ void Peer::connectToPeer(const char *remote_ip) {
   }
 
   // Wait for a response packet with urgent and ack flags
-  CustomPacket response_packet;
+  // CustomPacket response_packet;
   // while (true) {
   //   receivePacket(response_packet);
 
