@@ -175,9 +175,20 @@ CustomPacket::fragmentMessage(const std::string &message,
     std::string file_extension = file_name.substr(file_name.find_last_of('.') + 1);
 
     // Read the file content into a string
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string file_content = oss.str();
+    // std::ostringstream oss;
+    // oss << file.rdbuf();
+    // std::string file_content = oss.str();
+    // file.close();
+
+    file.seekg(0, std::ios::end);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> file_content(size);
+    if (!file.read(file_content.data(), size)) {
+        std::cerr << "Error reading file: " << file_path << "\n";
+        return packets;
+    }
     file.close();
 
     {

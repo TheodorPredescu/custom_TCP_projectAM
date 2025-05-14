@@ -1,4 +1,533 @@
-#include <arpa/inet.h>
+// CustomPacket.h
+#ifndef CUSTOM_PACKET_H
+#define CUSTOM_PACKET_H
+
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <sys/types.h>
+#include <vector>
+
+// flags:
+// bit7| bit6 |   bit5  |    bit4    |   bit3   | bit2  |bit1 |  bit0
+// enc |error |msg_type |start_trans |end_trans |series |ACK  |URGENT
+
+// msg_type: 0 text, 1 file
+// to fully ask for end of transmition we send URGENT bit and end_trans bit
+
+struct CustomPacket {
+  uint16_t packet_id;
+  uint8_t flags = 0;
+  uint16_t length;
+  char payload[256];
+  uint16_t checksum;
+
+  static std::map<u_int16_t, CustomPacket>
+  fragmentMessage(const std::string &message, u_int16_t &packet_id, const bool &is_file = false);
+  static std::string
+  composedMessage(std::map<uint16_t, CustomPacket> &map_packets);
+  static void incrementPacketId(uint16_t &packet_id);
+
+  uint16_t calculateChecksum() const;
+  void serialize(uint8_t *buffer) const;
+  static CustomPacket deserialize(const uint8_t *buffer);
+  bool getMsgType() const;
+  void setMsgType(int msgType);
+  void set_start_transmition_flag();
+  bool get_start_transmition_flag() const;
+  void set_end_transmition_flag();
+  bool get_end_transmition_flag() const;
+  void set_serialize_flag();
+  bool get_serialize_flag() const;
+  void set_ack_flag();
+  bool get_ack_flag() const;
+  void set_urgent_flag();
+  bool get_urgent_flag() const;
+  void set_error_flag();
+  bool get_error_flag() const;
+
+  //debug
+  void printFlags() const;
+
+;
+};
+
+#endif
+#include "CustomPacket.h"
+#include "MissingPacketsException.h"
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <vector>
+#include <string>
+#include <sys/types.h>
+#include <bitset>
+#include <fstream>
+#include <sstream>
+
+// Added function for increment because i was repeating myself
+void CustomPacket::incrementPacketId(uint16_t &packet_id) {
+  packet_id += 1;
+  if (packet_id >= UINT16_MAX - 1) {
+    std::cerr << "Warning: Packet ID overflow. Resetting...\n";
+    packet_id = 0;
+  }
+}
+
+uint16_t CustomPacket::calculateChecksum() const{
+  uint32_t sum = 0;
+  const uint8_t *data = reinterpret_cast<const uint8_t *>(this);
+  for (size_t i = 0; i < sizeof(*this) - sizeof(this->checksum); ++i) {
+    sum += data[i];
+  }
+  return static_cast<uint16_t>(sum & 0xFFFF);
+}
+
+void CustomPacket::serialize(uint8_t *buffer) const {
+  memcpy(buffer, this, sizeof(CustomPacket));
+}
+
+CustomPacket CustomPacket::deserialize(const uint8_t *buffer) {
+  CustomPacket packet;
+  memcpy(&packet, buffer, sizeof(CustomPacket));
+  return packet;
+}
+
+// SETS CONTEXT TYPE: MESSAGE OR FILE
+// 0 for msg and 1 for file
+bool CustomPacket::getMsgType() const { return (bool)((flags >> 5) & 0x01); }
+
+void CustomPacket::setMsgType(int msgType) {
+  // clears it if msgType = 0 -> text
+  if (msgType == 0) {
+    flags &= ~0x20;
+
+    // or it sets it to 1 the 5th bit(starting from 0) if the package is part of
+    // a file
+  } else if (msgType == 1) {
+    flags |= 0x20;
+  } else {
+    std::cerr << "Invalid msgType value!! Only 0 and 1 accepted.\n";
+  }
+}
+
+// error flag (the one that will contain missing packets)
+void CustomPacket::set_error_flag() {flags |= 0x01 << 6;}
+bool CustomPacket::get_error_flag() const {return (flags & (0x01 << 6)) != 0;}
+
+// start transmition flag -> the 4th bit
+void CustomPacket::set_start_transmition_flag() { flags |= 0x10; }
+bool CustomPacket::get_start_transmition_flag() const {
+  return (flags & 0x10) != 0;
+}
+
+// end transmition flag the 3rd bit
+void CustomPacket::set_end_transmition_flag() { flags |= 0x08; }
+bool CustomPacket::get_end_transmition_flag() const {
+  return (flags & 0x08) != 0;
+}
+
+// serialize bit flag; the 2nd bit
+void CustomPacket::set_serialize_flag() { flags |= 0x04; }
+bool CustomPacket::get_serialize_flag() const { return (flags & 0x04) != 0; }
+
+// acknowledgement flag; the 1st bit
+void CustomPacket::set_ack_flag() { flags |= 0x02; }
+bool CustomPacket::get_ack_flag() const { return (flags & 0x02) != 0; }
+
+// urgent flag -> check and set; the 0th bit
+void CustomPacket::set_urgent_flag() { flags |= 0x01; }
+bool CustomPacket::get_urgent_flag() const { return (flags & 0x01) != 0; }
+
+//---------------------------------------------------------------------------
+// Fragment a message into multiple packets
+// It does add packet id because it was needed (switched to map)
+// It does add checksumm so that all is done here
+std::map<u_int16_t, CustomPacket>
+CustomPacket::fragmentMessage(const std::string &message,
+                              u_int16_t &packet_id, const bool &is_file) {
+
+  std::map<u_int16_t, CustomPacket> packets;
+  size_t maxPayloadSize = 256;
+  size_t offset = 0;
+
+    //-----------FOR MSG-------------
+  if (is_file == false) {
+
+    size_t totalLength = message.size() + 1;
+    // Calculating the number of packets that will be needed to be send for this
+    // message
+    int number_of_packages_to_be_sended =
+        (totalLength + maxPayloadSize - 1) / maxPayloadSize;
+
+    // Creating the first packet that contains the size of the big message; It
+    // will have 2 flags on : serialize and start transmition flag
+    if (number_of_packages_to_be_sended > 1) {
+      CustomPacket start_packet;
+
+      start_packet.set_start_transmition_flag();
+      start_packet.set_serialize_flag();
+
+      std::string length_ser = std::to_string(number_of_packages_to_be_sended);
+      memcpy(start_packet.payload, length_ser.data(), length_ser.length());
+      start_packet.payload[length_ser.length()] = '\0'; // Add null terminator
+      start_packet.length = length_ser.length() + 1; // Include null terminator in length
+
+      CustomPacket::incrementPacketId(packet_id);
+      start_packet.packet_id = packet_id;
+
+      start_packet.checksum = start_packet.calculateChecksum();
+
+      packets[packet_id] = start_packet;
+    }
+
+    while (offset < totalLength) {
+
+      CustomPacket packet;
+
+      // copying in memory in the current packet.payload the message string
+      size_t length = std::min(maxPayloadSize, totalLength - offset);
+      memcpy(packet.payload, message.data() + offset, length);
+
+      // Setting length
+      packet.length = length;
+      offset += length;
+
+      if (number_of_packages_to_be_sended > 1) {
+        packet.set_serialize_flag();
+      }
+
+      if (offset >= totalLength) {
+        packet.set_end_transmition_flag(); // Last packet
+        // packet.payload[length] = '\0';
+        // packet.length += 1;
+      }
+
+      CustomPacket::incrementPacketId(packet_id);
+      packet.packet_id = packet_id;
+      packet.checksum = packet.calculateChecksum();
+      packets[packet_id] = packet;
+    }
+
+  }else {
+    //-----------FOR FILE-------------
+    //the msg will be the path
+    std::string file_path = message;
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+      {
+        std::cerr << "Error: Could not open file: " << file_path << "\n";
+      }
+      //dont how what to return; null recommanded
+      return packets;
+    }
+
+
+    // Extract file name and type
+    std::string file_name = file_path.substr(file_path.find_last_of("/\\") + 1);
+    std::string file_extension = file_name.substr(file_name.find_last_of('.') + 1);
+
+    // Read the file content into a string
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string file_content = oss.str();
+    file.close();
+
+    {
+      std::cout << "File read successfully. Size: " << file_content.size() << " bytes\n";
+    }
+
+    //Starting packet
+    size_t totalLength = file_content.size() + 1;
+    int number_of_packages_to_be_sended = (totalLength + maxPayloadSize - 1) / maxPayloadSize + 1;
+    CustomPacket start_packet;
+    start_packet.set_start_transmition_flag();
+    start_packet.set_serialize_flag();
+    start_packet.setMsgType(1);
+
+    std::string length_ser = std::to_string(number_of_packages_to_be_sended);
+    memcpy(start_packet.payload, length_ser.data(), length_ser.length());
+    start_packet.payload[length_ser.length()] = '\0'; // Add null terminator
+    start_packet.length = length_ser.length() + 1; // Include null terminator in length
+
+    CustomPacket::incrementPacketId(packet_id);
+    start_packet.packet_id = packet_id;
+
+    start_packet.checksum = start_packet.calculateChecksum();
+
+    packets[packet_id] = start_packet;
+
+    // Create a metadata packet
+    std::string metadata = file_name + "|" + file_extension + "|" + std::to_string(file_content.size());
+    CustomPacket metadata_packet;
+    metadata_packet.set_serialize_flag();
+    metadata_packet.setMsgType(1);
+    memcpy(metadata_packet.payload, metadata.data(), metadata.size());
+    metadata_packet.length = metadata.size();
+
+    CustomPacket::incrementPacketId(packet_id);
+    metadata_packet.packet_id = packet_id;
+
+    metadata_packet.checksum = metadata_packet.calculateChecksum();
+
+    // Send the metadata packet
+    packets[packet_id] = metadata_packet;
+
+    {
+      std::cout << "Metadata packet sent: " << metadata << "\n";
+    }
+
+    while (offset < totalLength) {
+
+      CustomPacket packet;
+
+      // copying in memory in the current packet.payload the message string
+      size_t length = std::min(maxPayloadSize, totalLength - offset);
+      memcpy(packet.payload, file_content.data() + offset, length);
+
+      // Setting length
+      packet.length = length;
+      offset += length;
+
+      packet.set_serialize_flag();
+      packet.setMsgType(1);
+
+      if (offset >= totalLength) {
+        packet.set_end_transmition_flag(); // Last packet
+        // packet.payload[length] = '\0';
+        // packet.length += 1;
+      }
+
+      CustomPacket::incrementPacketId(packet_id);
+      packet.packet_id = packet_id;
+      packet.checksum = packet.calculateChecksum();
+      packets[packet_id] = packet;
+    }
+  }
+  return packets;
+}
+
+//---------------------------------------------------------------------------------
+// Checks if there is a start and end to this map and if the number of elements
+// given in the first packet is the same with the number of elements received;
+std::string CustomPacket::composedMessage(
+    std::map<uint16_t, CustomPacket> &receivedPackets) {
+
+  int expectedPacketCount = -1; // Unknown initially
+  int receivedPacketCount = 0;
+  uint16_t startPacketId = 0;
+  bool hasEndPacket = false;
+
+  // For the request back of the packages that did not make it
+  std::vector<uint16_t> not_received_packages;
+
+  for (auto it = receivedPackets.begin(); it != receivedPackets.end();) {
+    const CustomPacket &packet = it->second;
+
+
+    //we recalculate checksum and check if it has the same value
+    if (packet.calculateChecksum() != packet.checksum) {
+      std::cerr << "\nPacket with id: " << it->first << " has been compromised!\n\n";
+      it = receivedPackets.erase(it);
+      continue;
+
+    }
+
+    // If we find a start packet, extract the expected number of packets
+    if (packet.get_start_transmition_flag()) {
+      std::string countStr(packet.payload, packet.length - 1);
+      std::cout<<"\n\nCountStr: "<<countStr<<", Of size: "<<countStr.length()<<std::endl;
+      try {
+        expectedPacketCount = std::stoi(countStr);
+      } catch (...) {
+        std::cerr << "Error: Invalid start packet format.\n";
+        throw std::runtime_error("Invalid start packet format");
+      }
+      startPacketId = packet.packet_id; // Store its ID
+      ++it;
+      continue;                         // Do not add start packet to the map
+    }
+
+    receivedPacketCount++;
+
+    if (packet.get_end_transmition_flag()) {
+      hasEndPacket = true;
+    }
+
+    ++it;
+  }
+
+  std::cout << "Expected Packet Count: " << expectedPacketCount
+            << ", Received Packet Count: " << receivedPacketCount
+            << ", Has End Packet: " << std::boolalpha << hasEndPacket
+            << ", hasEndPacket: " << hasEndPacket << std::endl;
+
+  if (expectedPacketCount == -1) {
+    std::cerr << "Error: No starting packet\n\t"
+          "It is needed a starting packet to know the dimention of the message!!!\n"
+          "\tSending request for a new starting packet.\n\n";
+    throw MissingPacketsException(not_received_packages, true);
+  }
+
+  // Ensure we received all expected packets; care that if we have a short message
+  // we will not have a start, end and serialise flag, and only the packetid
+
+  //deleted:expectedPacketCount == -1 ||  
+  if (receivedPacketCount != expectedPacketCount || !hasEndPacket) {
+    std::cerr << "Error: Missing packets or end flag not received.\n";
+    // throw MissingPacketsException(not_received_packages, expectedPacketCount == -1);
+  }
+
+  // Now, reconstruct the message
+  std::string message;
+  uint16_t i = startPacketId;
+
+  for (const auto &pair : receivedPackets) {
+    const CustomPacket &packet = pair.second;
+
+    if (packet.packet_id != startPacketId){
+      if (packet.get_end_transmition_flag()) {
+        message.append(packet.payload, packet.length - 1);
+      }else {
+        message.append(packet.payload, packet.length);
+      }
+    }
+
+    // We compare the id from received packets with the cnt we are keeping to check for missing packets;
+    // for every new packet from the map we increment the i until it has the same value, 
+    // spotting missing packets
+    while (i != pair.first) {
+      not_received_packages.push_back(i);
+      CustomPacket::incrementPacketId(i);
+      if (i == startPacketId) break;
+    }
+
+    CustomPacket::incrementPacketId(i);
+  }
+
+  //We try to use try catch first, waiting for results and trying new things
+  if (!not_received_packages.empty()) {
+    throw MissingPacketsException(not_received_packages, false);
+  }
+
+  return message;
+}
+
+void CustomPacket::printFlags() const {
+  std::cout << "Flags (binary): " << std::bitset<8>(static_cast<unsigned int>(flags)) << "\n";
+  std::cout << "  Encryption (enc): " << ((flags & (1 << 7)) != 0) << "\n";
+  std::cout << "  Error: " << get_error_flag() << "\n";
+  std::cout << "  Message Type (msg_type): " << getMsgType() << "\n";
+  std::cout << "  Start Transmission (start_trans): " << get_start_transmition_flag() << "\n";
+  std::cout << "  End Transmission (end_trans): " << get_end_transmition_flag() << "\n";
+  std::cout << "  Serialize (series): " << get_serialize_flag() << "\n";
+  std::cout << "  Acknowledgment (ACK): " << get_ack_flag() << "\n";
+  std::cout << "  Urgent: " << get_urgent_flag() << "\n";
+}
+#ifndef PEER_H
+#define PEER_H
+
+#include "CustomPacket.h"
+#include <mutex>
+#include <vector>
+#include <condition_variable>
+#include <netinet/in.h>
+#include <string>
+
+class Peer {
+public:
+
+    std::vector<std::string> messages_received;
+    bool is_connected = false, exiting = false;
+
+    std::mutex is_connected_mutex;
+    std::mutex cout_mutex;
+    std::mutex adding_msg_received;
+    std::mutex exiting_mutex;
+
+    void startPeer();
+    void connectToPeer(const char *remote_ip);
+
+    void sendMessage(const std::string &msg);
+
+    void sendFile(const std::string &file_path);
+    void listenForPackets();
+    void processPackets();
+    void endConnection();
+
+    std::string get_messages_received();
+    bool confirm_file_received();
+
+    void runTerminalInterface();
+
+private:
+    int sock;
+    int serialise_packet_size = 0, procesed_packets = 0;
+    int port=8081;
+    bool requested_end_transmition = false;
+    // bool client_addr_initialized = false; // Track if the client's address is initialized
+    uint16_t packet_id = 0;
+    bool connectToPeer_message_send = false;
+    std::vector<uint16_t> missing_packets;
+
+    std::string localIPAddress;
+
+    //For dealing with error packets, i need to store for a while the packets
+    // I will try to memorate a finite number of packets (1000)
+    std::map<uint16_t, CustomPacket> packetsToBeSend;
+    int size_of_packetsToBeSend = 1000;
+
+    std::string folder_name = "data";
+
+    //For seeing messages
+    bool file_received = false;
+
+    std::mutex packet_mutex;
+    std::mutex packet_id_mutex;
+    std::mutex packetsToBeSend_mutex;
+    std::mutex checking_file_received;
+    std::mutex requested_end_transmition_mutex;
+    std::mutex connectToPeer_message_send_mutex;
+
+    // Declare cout_mutex as extern
+
+    
+    std::vector<CustomPacket> packet_vector;
+    std::condition_variable packet_cv;
+    std::condition_variable messages_received_cv;
+    std::condition_variable checking_file_received_cv;
+
+    sockaddr_in peer_addr, client_addr;
+
+    void sendPacket(const CustomPacket &packet);
+    void receivePacket(CustomPacket &packet);
+    void composePacketMessage();
+    void composePacketFile();
+    void sendPacketFile();
+
+    //new debugging method
+    void sendPacketTo(const CustomPacket &packet, const struct sockaddr_in &dest_addr);
+    void incrementing_and_checking_packet_id(const uint16_t idpacket);
+    CustomPacket create_ack_packet();
+    CustomPacket create_error_packet(const uint16_t &missing_packet_id);
+    CustomPacket create_start_packet(const int &size, const bool &isFile = false);
+
+    //For memoring the packets that will be send
+    void add_packets_to_history(const std::map<uint16_t, CustomPacket> &packet_list);
+
+    //For adding complete messages in vector
+    void adding_messages_in_received_messages(const std::string &msg);
+
+    void ensureDataFolderExists();
+    std::string getLocalIPAddress() const;
+    int connectToAvailablePort();
+    void print_commands_options();
+};
+
+#endif // PEER_H#include <arpa/inet.h>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -28,10 +557,6 @@
 #include "CustomPacket.h"
 
 void Peer::sendPacket(const CustomPacket &packet) { 
-
-  {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
   {
   // Debug: Print the destination address
   char dest_ip[INET_ADDRSTRLEN];
@@ -1567,4 +2092,568 @@ std::string Peer::getLocalIPAddress() const {
     }
 
     return ip_addresses[choice - 1];
+}#include <cstdint> // For uint8_t, uint16_t
+#include <cstring> // For memcpy
+#include <iostream>
+#include <map>
+#include <vector>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <condition_variable>
+
+#include "CustomPacket.h"
+#include "MissingPacketsException.h"
+#include "Peer.h"
+#include "imgui/imgui.h"
+#include "imgui/backends/imgui_impl_glfw.h"
+#include "imgui/backends/imgui_impl_opengl3.h"
+#include <GLFW/glfw3.h>
+#include <thread>
+#include <vector>
+#include <string>
+
+std::mutex cout_mutex;
+
+// flags:
+// bit7  bit6    bit5      bit4       bit3       bit2        bit1   bit0 
+// enc ---  msg_type  start_trans  end_trans   series     ACK       URGENT
+//
+//
+// msg_type: 0 text, 1 file
+//  Define Packet Structure
+
+void print_and_verify_bits0_5(CustomPacket packet) {
+  std::cout << "Initial MsgType: " << packet.getMsgType() << std::endl;
+  packet.setMsgType(1); // File
+  std::cout << "Updated MsgType: " << packet.getMsgType() << std::endl;
+
+  std::cout << "Initial ACK flag: " << packet.get_ack_flag() << std::endl;
+  packet.set_ack_flag();
+  std::cout << "Updated ACK flag: " << packet.get_ack_flag() << std::endl;
+
+  std::cout << "Initial End Transmission flag: " << packet.get_end_transmition_flag() << std::endl;
+  packet.set_end_transmition_flag();
+  std::cout << "Updated End Transmission flag: " << packet.get_end_transmition_flag() << std::endl;
+
+  std::cout << "Initial Start Transmission flag: " << packet.get_start_transmition_flag() << std::endl;
+  packet.set_start_transmition_flag();
+  std::cout << "Updated Start Transmission flag: " << packet.get_start_transmition_flag() << std::endl;
+
+  std::cout << "Initial Urgent flag: " << packet.get_urgent_flag() << std::endl;
+  packet.set_urgent_flag();
+  std::cout << "Updated Urgent flag: " << packet.get_urgent_flag() << std::endl;
 }
+
+void test_packet_serialization() {
+  // Create a test packet
+  CustomPacket packet;
+  packet.packet_id = 1;
+  packet.setMsgType(0); // Text message
+  packet.set_ack_flag();
+  packet.set_start_transmition_flag();
+  strcpy(packet.payload, "Hello, custom protocol!"); // Set payload
+  packet.length = strlen(packet.payload);           // Set length
+  packet.checksum = packet.calculateChecksum();     // Calculate checksum
+
+  // Print the original packet details
+  std::cout << "Original Packet Details:\n";
+  std::cout << "Packet ID: " << packet.packet_id << "\n";
+  std::cout << "Message Type: " << (int)packet.getMsgType() << "\n";
+  std::cout << "Payload: " << packet.payload << "\n";
+  std::cout << "Length: " << packet.length << "\n";
+  std::cout << "Checksum: " << packet.checksum << "\n";
+  packet.printFlags();
+
+  // Serialize the packet
+  uint8_t buffer[sizeof(CustomPacket)];
+  packet.serialize(buffer);
+
+  // Deserialize the packet
+  CustomPacket received = CustomPacket::deserialize(buffer);
+
+  // Print the deserialized packet details
+  std::cout << "\nDeserialized Packet Details:\n";
+  std::cout << "Packet ID: " << received.packet_id << "\n";
+  std::cout << "Message Type: " << (int)received.getMsgType() << "\n";
+  std::cout << "Payload: " << received.payload << "\n";
+  std::cout << "Length: " << received.length << "\n";
+  std::cout << "Checksum: " << received.checksum << "\n";
+  received.printFlags();
+
+  // Verify the deserialized packet
+  if (received.packet_id == packet.packet_id &&
+      received.getMsgType() == packet.getMsgType() &&
+      strcmp(received.payload, packet.payload) == 0 &&
+      received.length == packet.length &&
+      received.checksum == packet.checksum) {
+    std::cout << "\nTest passed: Packet serialization and deserialization are correct.\n";
+  } else {
+    std::cout << "\nTest failed: Packet serialization and deserialization are incorrect.\n";
+  }
+}
+
+void test_fragment_and_compose_message() {
+  // Create a long message to be fragmented
+  std::string long_message = "Site-ul are în pagina (pagina textit) două butoare disponibile extit șiextit, al doilea "
+                             "fiind pentru crearea de utilizator nou al aplicației (orice utilizator va trebui să-și facă cont pentru a putea cumpăra bilete), "
+                             "iar primul pentru a te conecta la un cont deja existent. "
+                             "Pentru conectarea la un cont este nevoie doar de textitși de textit{parola} contului. Conectarea la un cont ne va oferi "
+                             "posibilitatea de a vizualiza istoricul biletelor cumpărate (dacă există), cursele ce vor avea loc și lista locurilor libere din avion. "
+                             "Prin apăsarea pe un loc liber, acel bilet va fi adaugat în coșul utilizatorului. Această acțiune poate fi repetată pentru posibilitatea "
+                             "cumpărării a multiple bilete simultan. "
+                             "Dacă în coș se află cel puțin un bilet, vor apărea două butoane: textit{} și textit{}, ce vor oferi posibilitatea de a șterge din coșul "
+                             "curent biletul selectat, dar și de a finaliza cumpărarea, adăugând biletele în istoric și golind coșul.";
+  uint16_t packet_id = 0;
+
+  // Fragment the message
+  std::map<uint16_t, CustomPacket> fragmented_packets = CustomPacket::fragmentMessage(long_message, packet_id);
+
+  // Print fragmented packets
+  std::cout << "Fragmented Packets:\n";
+  for (const auto &pair : fragmented_packets) {
+    const CustomPacket &packet = pair.second;
+    std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
+  }
+
+  // fragmented_packets.erase(2);
+  if (fragmented_packets.find(2) != fragmented_packets.end()){
+    fragmented_packets[2].checksum = 1243;
+  }
+  std::cout << "Fragmented Packets:\n";
+  for (const auto &pair : fragmented_packets) {
+    const CustomPacket &packet = pair.second;
+    std::cout << "Packet ID: " << packet.packet_id << ", Payload: " << packet.payload << ", Checksum: " << packet.checksum << ", length: "<< packet.length<<"\n\n";
+  }
+
+
+  try {
+  // Compose the message from fragmented packets
+  std::string composed_message = CustomPacket::composedMessage(fragmented_packets);
+
+  // Print the composed message
+  std::cout << "\n\nComposed Message: " << composed_message << "\n";
+  std::cout << "Composed Message size: " << composed_message.length() << "\n";
+
+
+  } catch (const MissingPacketsException& e) {
+    std::cerr <<"Error: " << e.what() <<std::endl;
+    const std::vector<uint16_t>& missing_packets = e.getMissingPackets();
+
+    for (const uint16_t missing_packet_id : missing_packets) {
+      std::cout<<missing_packet_id << std::endl;
+    }
+
+  }catch (const std::exception& e) {
+    std::cerr<<"Error: " << e.what()<<std::endl;
+  }
+
+}
+
+void test_peer_class() {
+  // Mutex and condition variable for thread synchronization
+  std::mutex sync_mutex;
+  std::condition_variable server_ready_cv;
+  bool server_ready = false;
+
+  // Mutex for thread-safe output
+  std::mutex cout_mutex;
+
+  // Peer 1: Server
+  std::thread server_thread([&]() {
+    Peer server_peer;
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Starting server peer on port 8080...\n";
+    }
+
+    // Start the server
+    server_peer.startPeer();
+
+    // Notify the client that the server is ready
+    {
+      std::lock_guard<std::mutex> lock(sync_mutex);
+      server_ready = true;
+    }
+    server_ready_cv.notify_one();
+
+    // Keep the server running
+    std::this_thread::sleep_for(std::chrono::seconds(10)); // Simulate server activity
+    // server_peer.endConnection();
+    // std::this_thread::sleep_for(std::chrono::seconds(3)); // Simulate server activity
+  });
+
+  // Peer 2: Client
+  std::thread client_thread([&]() {
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Client thread started.\n";
+    }
+
+    // Wait for the server to be ready
+    {
+      std::unique_lock<std::mutex> lock(sync_mutex);
+      server_ready_cv.wait(lock, [&]() { return server_ready; });
+    }
+
+    Peer client_peer;
+    {
+      std::lock_guard<std::mutex> lock(cout_mutex);
+      std::cout << "Starting client peer...\n";
+    }
+
+    // Start the client and send a message
+    client_peer.startPeer();
+    client_peer.sendMessage("Site-ul are în pagina (pagina textit) două butoare disponibile extit șiextit, al doilea "
+                             "fiind pentru crearea de utilizator nou al aplicației (orice utilizator va trebui să-și facă cont pentru a putea cumpăra bilete), "
+                             "iar primul pentru a te conecta la un cont deja existent. "
+                             "Pentru conectarea la un cont este nevoie doar de textitși de textit{parola} contului. Conectarea la un cont ne va oferi "
+                             "posibilitatea de a vizualiza istoricul biletelor cumpărate (dacă există), cursele ce vor avea loc și lista locurilor libere din avion. "
+                             "Prin apăsarea pe un loc liber, acel bilet va fi adaugat în coșul utilizatorului. Această acțiune poate fi repetată pentru posibilitatea "
+                             "cumpărării a multiple bilete simultan. "
+                             "Dacă în coș se află cel puțin un bilet, vor apărea două butoane: textit{} și textit{}, ce vor oferi posibilitatea de a șterge din coșul "
+                             "curent biletul selectat, dar și de a finaliza cumpărarea, adăugând biletele în istoric și golind coșul.");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    client_peer.sendMessage("   Site-ul are în pagina (pagina textit) două butoare disponibile extit șiextit, al doilea "
+                             "fiind pentru crearea de utilizator nou al aplicației (orice utilizator va trebui să-și facă cont pentru a putea cumpăra bilete), "
+                             "iar primul pentru a te conecta la un cont deja existent. "
+                             "Pentru conectarea la un cont este nevoie doar de textitși de textit{parola} contului. Conectarea la un cont ne va oferi "
+                             "posibilitatea de a vizualiza istoricul biletelor cumpărate (dacă există), cursele ce vor avea loc și lista locurilor libere din avion. "
+                             "Prin apăsarea pe un loc liber, acel bilet va fi adaugat în coșul utilizatorului. Această acțiune poate fi repetată pentru posibilitatea "
+                             "cumpărării a multiple bilete simultan. ");
+
+    std::this_thread::sleep_for(std::chrono::seconds(3)); // Simulate server activity
+    client_peer.endConnection();
+  });
+
+  // Wait for both threads to finish
+  server_thread.join();
+  client_thread.join();
+
+  {
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    std::cout << "Peer test completed.\n";
+  }
+}
+
+// Global variables for the chat interface
+std::vector<std::string> chat_messages;
+std::string input_message;
+std::string ip_address = "127.0.0.1"; // Default IP address
+bool exit_exit = false;
+
+// Function to initialize Dear ImGui
+void initImGui(GLFWwindow* window) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+    ImGui::StyleColorsDark();
+}
+
+// Function to clean up Dear ImGui
+void cleanupImGui() {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+}
+
+// Function to render the GUI
+bool renderGUI(Peer& peer) {
+  bool var_is_connected;
+  {
+    std::lock_guard<std::mutex>lock(peer.is_connected_mutex);
+    var_is_connected = peer.is_connected;
+  }
+    if (!var_is_connected) {
+
+        // Connection screen
+        ImGui::Begin("Connect to Peer");
+        ImGui::Text("Enter the IP address of the peer you want to connect to:");
+
+        // Input box for IP address
+        static char ip_buffer[16] = "192.168.0.114"; // Buffer for IP address (max length 15 + null terminator)
+        ImGui::InputText("IP Address", ip_buffer, sizeof(ip_buffer));
+
+        // Connect button
+        if (ImGui::Button("Connect")) {
+            std::string ip_address(ip_buffer);
+
+            {
+              std::lock_guard<std::mutex>lock(peer.cout_mutex);
+              std::cout<<"Connecting\n";
+            }
+
+            // Validate IP address length
+            if (ip_address.length() >= 7 && ip_address.length() <= 15) {
+
+                {
+                  std::lock_guard<std::mutex>lock(peer.cout_mutex);
+                  std::cout<<"Valid ip\n";
+                }
+
+                peer.connectToPeer(ip_address.c_str());
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                {
+                  std::lock_guard<std::mutex>lock(peer.is_connected_mutex);
+                  var_is_connected = peer.is_connected;
+                }
+                if (var_is_connected) {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Connected successfully!");
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to connect. Please try again.");
+                }
+            } else {
+
+                {
+                  std::lock_guard<std::mutex>lock(peer.cout_mutex);
+                  std::cout<<"Invalid IP :(\n";
+                }
+
+                // Display an error message if the IP address is invalid
+                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Invalid IP address length! Must be between 4 and 12 characters.");
+            }
+        }
+
+        ImGui::End();
+    } else {
+
+        exit_exit = true;
+
+        // Chat screen
+        ImGui::Begin("Chat Interface", nullptr, ImGuiWindowFlags_NoResize);
+
+        // Display chat messages
+        ImGui::BeginChild("ChatWindow", ImVec2(0, ImGui::GetWindowHeight() - 150), true);
+        for (const auto& message : chat_messages) {
+            ImGui::TextWrapped("%s", message.c_str());
+        }
+        ImGui::EndChild();
+
+        // Input box for sending messages
+        static std::string message_buffer; // Use std::string for dynamic allocation
+        char input_buffer[1024];           // Temporary buffer for ImGui input
+
+        // Copy the current content of message_buffer to input_buffer
+        strncpy(input_buffer, message_buffer.c_str(), sizeof(input_buffer));
+        input_buffer[sizeof(input_buffer) - 1] = '\0'; // Ensure null termination
+
+        if (ImGui::InputText("Message", input_buffer, sizeof(input_buffer))) {
+            // Update message_buffer with the new input
+            message_buffer = input_buffer;
+        }
+
+        if (ImGui::Button("Send")) {
+            if (!message_buffer.empty()) {
+                peer.sendMessage(message_buffer); // Send the message
+                chat_messages.push_back("You: " + message_buffer); // Add to chat history
+                message_buffer.clear(); // Clear the input buffer
+            }
+        }
+
+        // Input box for file location
+        static char file_buffer[512] = ""; // Buffer for file path input
+        ImGui::InputText("File Path", file_buffer, sizeof(file_buffer));
+        if (ImGui::Button("Send File")) {
+            std::string file_path(file_buffer);
+            peer.sendFile(file_path);
+            chat_messages.push_back("You sent a file: " + file_path);
+            memset(file_buffer, 0, sizeof(file_buffer)); // Clear the input buffer
+        }
+
+        // Back button to disconnect and return to the connection screen
+        if (ImGui::Button("Back")) {
+            peer.endConnection(); // End the connection
+            chat_messages.clear(); // Clear chat messages
+              std::this_thread::sleep_for(std::chrono::milliseconds(200));
+          {
+            std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+            peer.is_connected = false;
+          }
+          return false;
+        }
+
+        ImGui::End();
+    }
+
+    bool is_con = false;
+    {
+      std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
+      is_con = peer.is_connected;
+    }
+
+    bool exitin = false;
+    {
+      std::lock_guard<std::mutex> lock(peer.exiting_mutex);
+      exitin = peer.exiting;
+    }
+
+    if (!is_con && exitin) {
+      chat_messages.clear(); // Clear chat messages
+      return false;
+    }
+
+    return true;
+}
+
+int main() {
+    
+  while (true){
+    {
+
+      // Initialize Peer
+      Peer peer;
+
+      peer.startPeer();
+
+      // Start a thread to listen for incoming packets
+      std::thread listener_thread([&peer]() {
+          peer.listenForPackets();
+      });
+
+      std::thread processor_thread([&peer]() {
+        peer.processPackets();
+      });
+
+      // Start a thread to print received messages
+      std::thread message_printer_thread([&peer]() {
+
+          // bool var_is_connected;
+          // {
+          //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+          //   var_is_connected = this->is_connected;
+          // }
+          while (true) {
+            std::string received_message = peer.get_messages_received();
+
+            if (received_message == "Aw12@0986^12luAwCluhWQ123~~``!") {
+              {
+                std::lock_guard<std::mutex> lock(peer.cout_mutex);
+                std::cout << "Received wierd message\n";
+              }
+              break;
+            }
+
+              {
+                std::lock_guard<std::mutex> lock(peer.cout_mutex);
+                std::cout << "\n[Received Message]: " << received_message << "\n\n";
+              }
+
+              std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+              chat_messages.push_back(received_message);
+              // for (const auto &msg :peer.messages_received) {
+              //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
+              //   // std::lock_guard<std::mutex> lock(peer.adding_msg_received);
+              //   std::cout<<msg<<std::endl;
+              // }
+
+              // print_commands_options();
+
+            // {
+            //   std::lock_guard<std::mutex> lock(is_connected_mutex);
+            //   var_is_connected = this->is_connected;
+            // }
+          }
+      });
+
+      // Initialize GLFW
+      if (!glfwInit()) {
+          return -1;
+      }
+
+      // Create a windowed mode window and its OpenGL context
+      GLFWwindow* window = glfwCreateWindow(800, 600, "Peer Chat", NULL, NULL);
+      if (!window) {
+          glfwTerminate();
+          return -1;
+      }
+
+      glfwMakeContextCurrent(window);
+      glfwSwapInterval(1);
+
+      // Initialize Dear ImGui
+      initImGui(window);
+
+      // Main loop
+      while (!glfwWindowShouldClose(window)) {
+          glfwPollEvents();
+
+          // Start the Dear ImGui frame
+          ImGui_ImplOpenGL3_NewFrame();
+          ImGui_ImplGlfw_NewFrame();
+          ImGui::NewFrame();
+
+          // Render the GUI
+          if (!renderGUI(peer)) break;
+
+          // Rendering
+          ImGui::Render();
+          int display_w, display_h;
+          glfwGetFramebufferSize(window, &display_w, &display_h);
+          glViewport(0, 0, display_w, display_h);
+          glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+          glClear(GL_COLOR_BUFFER_BIT);
+          ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+          glfwSwapBuffers(window);
+      }
+
+      // Cleanup
+      cleanupImGui();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+
+      // Wait for the listener thread to finish
+      if (listener_thread.joinable()) {
+          listener_thread.join();
+          std::cout << "[Thread Ended]: Listener thread has finished.\n";
+      }
+
+      // Wait for the processor thread to finish
+      if (processor_thread.joinable()) {
+          processor_thread.join();
+          std::cout << "[Thread Ended]: Processor thread has finished.\n";
+      }
+
+      // Wait for the message printer thread to finish
+      if (message_printer_thread.joinable()) {
+          message_printer_thread.join();
+          std::cout << "[Thread Ended]: Message printer thread has finished.\n";
+      }
+
+      std::cout << "End";
+
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  }
+    return 0;
+}
+
+#!/bin/bash
+
+# Function to check and install a package
+check_and_install() {
+    PACKAGE=$1
+    if ! dpkg -s $PACKAGE >/dev/null 2>&1; then
+        echo "$PACKAGE is not installed. Installing..."
+        sudo apt-get install -y $PACKAGE
+    else
+        echo "$PACKAGE is already installed."
+    fi
+}
+
+# Check and install required packages
+check_and_install libglfw3
+check_and_install libglfw3-dev
+check_and_install libgl1-mesa-dev
+check_and_install libx11-dev
+
+# g++ -o main ./main.cpp CustomPacket.cpp Peer.cpp -lglfw -lGL -pthread
+g++ -o main main.cpp Peer.cpp CustomPacket.cpp \
+    imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp \
+    imgui/backends/imgui_impl_glfw.cpp imgui/backends/imgui_impl_opengl3.cpp \
+    -Iimgui -Iimgui/backends -lglfw -lGL -pthread
+# sudo ./main
+XDG_RUNTIME_DIR=/tmp/$USER-runtime-dir sudo ./main
+rm main

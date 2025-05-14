@@ -47,14 +47,12 @@ struct CustomPacket {
   bool get_ack_flag() const;
   void set_urgent_flag();
   bool get_urgent_flag() const;
+  void set_error_flag();
+  bool get_error_flag() const;
 
   //debug
   void printFlags() const;
 
-  //New ideea: 6th bit will be used as error flag (meaning that it will 
-  // tell that the packet will contain missing packets)
-  void set_error_flag();
-  bool get_error_flag() const;
 ;
 };
 

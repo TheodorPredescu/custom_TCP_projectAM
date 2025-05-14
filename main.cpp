@@ -154,23 +154,6 @@ void test_fragment_and_compose_message() {
     std::cerr<<"Error: " << e.what()<<std::endl;
   }
 
-  // // Verify the composed messag se
-  // if (composed_message == long_message) {
-  //   std::cout << "Test passed: Message fragmentation and composition are correct.\n";
-  // } else {
-  //   std::cout << "Test failed: Message fragmentation and composition are incorrect.\n\n";
-  //   std::cout << "Composed Message:\n";
-  //   for (size_t i = 0; i < composed_message.size(); ++i) {
-  //     std::cout << composed_message[i] << " (" << static_cast<int>(composed_message[i]) << ") ";
-  //   }
-  //   std::cout << "\n\nOriginal Message:\n";
-  //   for (size_t i = 0; i < long_message.size(); ++i) {
-  //     std::cout << long_message[i] << " (" << static_cast<int>(long_message[i]) << ") ";
-  //   }
-  //   std::cout << "\n";
-  //   std::cout << "Composed Message size: " << composed_message.size() << "\n";
-  //   std::cout << "Original Message size: " << long_message.size() << "\n";
-  // }
 }
 
 void test_peer_class() {
@@ -290,11 +273,6 @@ bool renderGUI(Peer& peer) {
   }
     if (!var_is_connected) {
 
-        // if (exit_exit) {
-        //   exit_exit = false;
-        //   return false;
-        // }
-
         // Connection screen
         ImGui::Begin("Connect to Peer");
         ImGui::Text("Enter the IP address of the peer you want to connect to:");
@@ -398,24 +376,7 @@ bool renderGUI(Peer& peer) {
             std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
             peer.is_connected = false;
           }
-
-    // bool is_con = false;
-    // {
-    //   std::lock_guard<std::mutex> lock(peer.is_connected_mutex);
-    //   is_con = peer.is_connected;
-    // }
-
-    // bool exitin = false;
-    // {
-    //   std::lock_guard<std::mutex> lock(peer.exiting_mutex);
-    //   exitin = peer.exiting;
-    // }
-    // {
-    //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
-    //   std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
-    // }
-
-            return false;
+          return false;
         }
 
         ImGui::End();
@@ -432,11 +393,6 @@ bool renderGUI(Peer& peer) {
       std::lock_guard<std::mutex> lock(peer.exiting_mutex);
       exitin = peer.exiting;
     }
-
-    // {
-    //   std::lock_guard<std::mutex> lock(peer.cout_mutex);
-    //   std::cout<< "is_con: " << is_con <<"; exitin: " << exitin << std::endl;
-    // }
 
     if (!is_con && exitin) {
       chat_messages.clear(); // Clear chat messages
